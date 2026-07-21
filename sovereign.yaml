@@ -1,0 +1,17 @@
+# SovereignInterpreter local-first defaults
+# This project is an independent fork of an upstream interpreter framework.
+# It is not affiliated with, endorsed by, or sponsored by any organization.
+# All cloud dependencies have been removed.
+
+allow_cloud: false
+kill_switch: true
+kill_switch_path: .kill_switch
+default_model: llama3.2
+llm_base_url: http://127.0.0.1:11434/v1
+max_turns: 20
+max_iterations: 10
+auto_run: false
+allowed_roots:
+  - ./workspace
+  - ./examples
+redact_patterns: []

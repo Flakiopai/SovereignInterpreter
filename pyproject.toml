@@ -1,0 +1,8 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+# Project metadata primarily lives in setup.cfg (name = sovereigninterpreter).
+# SovereignInterpreter is an independent fork of an upstream interpreter framework.
+# It is not affiliated with, endorsed by, or sponsored by any organization.
+# All cloud dependencies have been removed.
