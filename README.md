@@ -66,6 +66,23 @@ These are enforced in code — not documented as suggestions.
 
 ---
 
+## Safety
+
+**Universal rule:** model-generated fenced code blocks never auto-run.
+
+Execution happens only when you:
+
+- Explicitly ask to run / execute / compute something, **or**
+- Enter Python directly (e.g. `print("test")` — runs locally, no LLM), **or**
+- Confirm when prompted, **or**
+- Use `%run` on the last shown assistant code block
+
+Plain text (e.g. `hello`) is never treated as executable. If a weak model still emits fences, the code is shown and skipped unless you confirm or `%run`. User-authored code and model-authored code are handled differently on purpose.
+
+Related REPL helpers: `%model [name]`, `%models`, `!shell` (e.g. `!ls`).
+
+---
+
 ## Architecture Overview
 
 ```mermaid
