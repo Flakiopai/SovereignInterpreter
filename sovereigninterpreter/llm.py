@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import urllib.error
 import urllib.request
 from typing import Any, Dict, Generator, Iterable, List, Optional, Union, TYPE_CHECKING
@@ -20,6 +21,69 @@ if TYPE_CHECKING:
 
 DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1"
 DEFAULT_MODEL = "llama3.2"
+
+
+def _models_from_ollama_list(raw: str) -> List[str]:
+    """Parse plain `ollama list` table output; first column is the model name."""
+    names: List[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.upper().startswith("NAME"):
+            continue
+        name = line.split()[0]
+        if name:
+            names.append(name)
+    return names
+
+
+def list_installed_models() -> List[str]:
+    """
+    Return locally installed Ollama model names via `ollama list`.
+
+    Returns an empty list when Ollama is unavailable or has no models.
+    """
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return []
+
+    if result.returncode != 0:
+        return []
+
+    return _models_from_ollama_list(result.stdout)
+
+
+def detect_installed_model() -> Optional[str]:
+    """Auto-detect the first locally installed Ollama model, or None."""
+    models = list_installed_models()
+    return models[0] if models else None
+
+
+def resolve_installed_model(name: str, installed: Optional[List[str]] = None) -> Optional[str]:
+    """
+    Resolve a requested model name against installed models.
+
+    Accepts exact matches and tagless names (e.g. ``llama3.2`` → ``llama3.2:latest``).
+    """
+    requested = (name or "").strip()
+    if not requested:
+        return None
+    models = installed if installed is not None else list_installed_models()
+    if requested in models:
+        return requested
+    prefix = requested + ":"
+    for model in models:
+        if model.startswith(prefix):
+            return model
+    return None
 
 
 class Function(BaseModel):
@@ -212,6 +276,8 @@ class LocalLLM:
             resolved_base = cfg.llm_base_url if cfg else DEFAULT_BASE_URL
 
         resolved_model = model or os.environ.get("GEN_LLM_MODEL")
+        if resolved_model is None:
+            resolved_model = detect_installed_model()
         if resolved_model is None:
             resolved_model = cfg.default_model if cfg else DEFAULT_MODEL
 

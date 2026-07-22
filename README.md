@@ -166,15 +166,23 @@ print(history[-1])
 
 ### 4. CLI REPL
 
+Launch with either:
+
 ```shell
-sovereigninterpreter repl
+sovereigninterpreter
 # or
 python -m sovereigninterpreter
 ```
 
+Do **not** use `python -m sovereign interpreter` (space) or `python -m SovereignInterpreter` (wrong module name).
+
 Input is plain stdin (keyboard / pipe). Ctrl-C or EOF exits cleanly.
 Set `NO_COLOR=1` to disable decorative ANSI colors; labels remain text-only.
 Use `--auto-run` only when you accept local execution risk.
+
+REPL helpers:
+- Magic: `%reset`, `%auto_run on|off`, `%model [name]`, `%models`
+- Shell shortcut: `!ls` runs a local shell command without calling the model
 
 ---
 

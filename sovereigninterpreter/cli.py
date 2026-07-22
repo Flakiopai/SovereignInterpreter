@@ -10,7 +10,11 @@ import sys
 
 from .config import load_config
 from .interpreter import SovereignInterpreter
+from .llm import list_installed_models, resolve_installed_model
 from .util import paint, use_color
+
+
+_MAGIC_HELP = "%reset, %auto_run on|off, %model [name], %models, %run"
 
 
 def _banner(auto_run: bool) -> None:
@@ -18,9 +22,11 @@ def _banner(auto_run: bool) -> None:
     print(title)
     print("Local-first code execution interpreter")
     print(f"auto_run={'on' if auto_run else 'off'} (confirm before code when off)")
+    print("Safety: model code runs only on explicit request, confirm, or %run")
     if not use_color():
         print("(NO_COLOR enabled — labels are plain text)")
-    print("Exit with Ctrl-C or EOF. Magic: %reset")
+    print(f"Exit with Ctrl-C or EOF. Magic: {_MAGIC_HELP}")
+    print("Shell shortcut: !command  (example: !ls)")
 
 
 def _confirm(language: str, code: str) -> bool:
@@ -35,6 +41,88 @@ def _confirm(language: str, code: str) -> bool:
     return answer in {"y", "yes"}
 
 
+def _handle_magic(line: str, interpreter: SovereignInterpreter) -> None:
+    """Handle REPL magic commands. Must run before any chat / code path."""
+    parts = line[1:].strip().split()
+    if not parts:
+        print(f"Empty magic command. Try {_MAGIC_HELP}")
+        return
+
+    cmd = parts[0].lower()
+    args = parts[1:]
+
+    if cmd == "reset":
+        interpreter.reset()
+        print("Conversation reset.")
+        return
+
+    if cmd == "auto_run":
+        if not args or args[0].lower() not in {"on", "off"}:
+            state = "on" if interpreter.auto_run else "off"
+            print(f"auto_run is {state}. Usage: %auto_run on|off")
+            return
+        interpreter.auto_run = args[0].lower() == "on"
+        print(f"auto_run={'on' if interpreter.auto_run else 'off'}")
+        return
+
+    if cmd == "models":
+        models = list_installed_models()
+        if not models:
+            print("No local models found. Is Ollama running?")
+            return
+        print("Installed models:")
+        for name in models:
+            marker = " *" if name == interpreter.llm.model else ""
+            print(f"  {name}{marker}")
+        return
+
+    if cmd == "model":
+        if not args:
+            print(f"Active model: {interpreter.llm.model}")
+            return
+        requested = " ".join(args).strip()
+        installed = list_installed_models()
+        resolved = resolve_installed_model(requested, installed)
+        if resolved is None:
+            if not installed:
+                print(f"Unknown model '{requested}'. No local models found (is Ollama running?).")
+            else:
+                available = ", ".join(installed)
+                print(f"Unknown model '{requested}'. Available: {available}")
+            return
+        interpreter.llm.model = resolved
+        interpreter.config.default_model = resolved
+        print(f"Active model: {resolved}")
+        return
+
+    if cmd == "run":
+        try:
+            output = interpreter.run_last_code()
+        except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+            err = paint("Error", "31") if use_color() else "Error"
+            print(f"{err}: {exc}")
+            return
+        print(output)
+        return
+
+    print(f"Unknown magic %{cmd}. Available: {_MAGIC_HELP}")
+
+
+def _handle_shell(line: str, interpreter: SovereignInterpreter) -> None:
+    """Run `!command` as a local shell command — never send to the LLM."""
+    command = line[1:].strip()
+    if not command:
+        print("Empty shell command. Example: !ls")
+        return
+    try:
+        output = interpreter.computer.run("shell", command)
+    except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+        err = paint("Error", "31") if use_color() else "Error"
+        print(f"{err}: {exc}")
+        return
+    print(output)
+
+
 def run_repl(*, auto_run: bool | None = None) -> int:
     """Interactive stdin loop. Ctrl-C / EOF exits cleanly."""
     config = load_config()
@@ -44,7 +132,9 @@ def run_repl(*, auto_run: bool | None = None) -> int:
     _banner(config.auto_run)
 
     interpreter = SovereignInterpreter(config=config)
-    print(f"Ready (model endpoint {config.llm_base_url})")
+    print(
+        f"Ready (model={interpreter.llm.model}, endpoint={config.llm_base_url})"
+    )
 
     while True:
         try:
@@ -54,18 +144,24 @@ def run_repl(*, auto_run: bool | None = None) -> int:
             print()
             return 0
 
-        if not user_input.strip():
+        line = user_input.strip()
+        if not line:
             continue
 
-        if user_input.strip() == "%reset":
-            interpreter.reset()
-            print("Conversation reset.")
+        # Magics and shell shortcuts must run before chat / Python execution.
+        if line.startswith("%"):
+            _handle_magic(line, interpreter)
+            continue
+
+        if line.startswith("!"):
+            _handle_shell(line, interpreter)
             continue
 
         config.assert_not_killed()
         try:
-            confirm = None if config.auto_run else _confirm
-            interpreter.chat(user_input, display=True, confirm=confirm)
+            # Always pass confirm so unsolicited model fences can be approved.
+            # auto_run only skips the prompt when the user requested execution.
+            interpreter.chat(user_input, display=True, confirm=_confirm)
         except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
             err = paint("Error", "31") if use_color() else "Error"
             print(f"{err}: {exc}")
@@ -77,6 +173,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="sovereigninterpreter",
         description=(
             "SovereignInterpreter local-first CLI. "
+            "Launch with: python -m sovereigninterpreter. "
             "Set NO_COLOR=1 for plain text."
         ),
     )
