@@ -1,5 +1,10 @@
 from sovereigninterpreter.computer import Computer
-from sovereigninterpreter.config import SovereignConfig
+from sovereigninterpreter.config import (
+    CloudForbiddenError,
+    KillSwitchError,
+    SovereignConfig,
+)
+from sovereigninterpreter.display import format_error
 from sovereigninterpreter.errors import (
     ExecutionDenied,
     ModelOutputError,
@@ -10,6 +15,7 @@ from sovereigninterpreter.errors import (
 )
 from sovereigninterpreter.interpreter import SovereignInterpreter
 from sovereigninterpreter.llm import MockLocalLLM
+from sovereigninterpreter.safety import SafetyViolation
 from sovereigninterpreter.terminal import Terminal, TerminalError
 
 
@@ -18,6 +24,20 @@ def test_error_envelope_format():
     assert err.format() == "[PythonError] boom"
     assert "traceback here" in err.format(show_tracebacks=True)
     assert format_exception(RuntimeError("x")) == "[Error] x"
+
+
+def test_fatal_policy_errors_use_typed_envelope(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    kill = KillSwitchError("halted")
+    cloud = CloudForbiddenError("blocked")
+    safety = SafetyViolation("denied")
+    assert kill.format() == "[KillSwitchError] halted"
+    assert cloud.format() == "[CloudForbiddenError] blocked"
+    assert safety.format() == "[SafetyViolation] denied"
+    assert format_exception(kill) == "[KillSwitchError] halted"
+    assert format_error(format_exception(kill)) == "[error] KillSwitchError: halted"
+    assert format_error(format_exception(cloud)) == "[error] CloudForbiddenError: blocked"
+    assert format_error(format_exception(safety)) == "[error] SafetyViolation: denied"
 
 
 def test_python_error_category(tmp_path, monkeypatch):

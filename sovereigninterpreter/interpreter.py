@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Callable, List, Optional, Union
 
 from .computer import Computer
 from .config import SovereignConfig, load_config
 from .llm import LocalLLM, MockLocalLLM
-from .memory import SovereignMemory
+from .memory import MemoryPack, SovereignMemory
 from .messages import MessageDict, assistant_code, computer_console, normalize_user_message
 from .respond import respond
 from .routing import LocalMessageRouter, Message
@@ -55,6 +57,72 @@ class SovereignInterpreter:
     def reset(self) -> None:
         self.messages = []
         self.router.clear()
+
+    def undo(self) -> int:
+        """
+        Revert the last user turn.
+
+        Drops the most recent user message and everything after it.
+        Returns the number of messages removed (0 if nothing to undo).
+        """
+        last_user = None
+        for i, msg in enumerate(self.messages):
+            if msg.get("role") == "user":
+                last_user = i
+        if last_user is None:
+            return 0
+        removed = len(self.messages) - last_user
+        self.messages = self.messages[:last_user]
+        return removed
+
+    def export_messages(self, path: Union[str, Path] = "messages.json") -> Path:
+        """Write conversation history to a JSON file."""
+        out = Path(path).expanduser()
+        if out.suffix.lower() != ".json":
+            out = Path(str(out) + ".json")
+        out.write_text(
+            json.dumps(self.messages, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return out.resolve()
+
+    def import_messages(self, path: Union[str, Path] = "messages.json") -> Path:
+        """Replace conversation history from a JSON file."""
+        src = Path(path).expanduser()
+        if src.suffix.lower() != ".json":
+            src = Path(str(src) + ".json")
+        data = json.loads(src.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            raise ValueError(f"Expected a JSON list of messages in {src}")
+        self.messages = list(data)
+        return src.resolve()
+
+    def export_memory(self, path: Union[str, Path] = "memory.json") -> Path:
+        """Write the current memory pack to a JSON file."""
+        if self.memory is None:
+            raise RuntimeError("Memory is disabled for this interpreter.")
+        out = Path(path).expanduser()
+        if out.suffix.lower() != ".json":
+            out = Path(str(out) + ".json")
+        pack = self.memory.export_pack()
+        out.write_text(
+            json.dumps(pack.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return out.resolve()
+
+    def import_memory(self, path: Union[str, Path] = "memory.json") -> Path:
+        """Replace the current memory pack from a JSON file."""
+        if self.memory is None:
+            raise RuntimeError("Memory is disabled for this interpreter.")
+        src = Path(path).expanduser()
+        if src.suffix.lower() != ".json":
+            src = Path(str(src) + ".json")
+        data = json.loads(src.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(f"Expected a JSON object memory pack in {src}")
+        self.memory.import_pack(MemoryPack.from_dict(data))
+        return src.resolve()
 
     def chat(
         self,
@@ -128,7 +196,24 @@ class SovereignInterpreter:
         """Show only this turn's messages with REPL role labels."""
         from .display import format_message_for_repl
 
-        for msg in self.messages[turn_start:]:
+        turn = self.messages[turn_start:]
+        # Interactive confirm already showed [confirm] + the one code preview + prompt.
+        confirmed = any(m.get("type") == "confirmation" for m in turn)
+        # Sandbox denial is reported as [skip]; don't also emit a misleading [run].
+        sandbox_skipped = any(
+            m.get("type") == "console"
+            and str(m.get("content", "")).startswith("[SandboxBlocked]")
+            for m in turn
+        )
+        for msg in turn:
+            if msg.get("type") == "confirmation":
+                continue
+            if (
+                (confirmed or sandbox_skipped)
+                and msg.get("role") == "assistant"
+                and msg.get("type") == "code"
+            ):
+                continue
             line = format_message_for_repl(msg)
             if line is not None:
                 print(line)

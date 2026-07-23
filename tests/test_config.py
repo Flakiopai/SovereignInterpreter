@@ -40,11 +40,11 @@ def test_kill_switch(tmp_path, monkeypatch):
 def test_load_config_yaml(tmp_path, monkeypatch):
     path = tmp_path / "sovereign.yaml"
     path.write_text(
-        "allow_cloud: false\ndefault_model: llama3.2\nmax_turns: 5\nauto_run: true\nallowed_roots:\n  - ./workspace\n"
+        "allow_cloud: false\ndefault_model: llama3.2\nmax_iterations: 5\nauto_run: true\nallowed_roots:\n  - ./workspace\n"
     )
     monkeypatch.chdir(tmp_path)
     cfg = load_config(path)
-    assert cfg.max_turns == 5
+    assert cfg.max_iterations == 5
     assert cfg.default_model == "llama3.2"
     assert cfg.auto_run is True
     assert cfg.allowed_roots == ["./workspace"]

@@ -11,12 +11,26 @@ from sovereigninterpreter.interpreter import SovereignInterpreter
 from sovereigninterpreter.llm import MockLocalLLM
 
 
-def test_format_confirm_preview():
+def test_format_confirm_preview(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
     line = format_confirm("python", 'print("hi")\n')
     assert line == '[confirm] python → print("hi")'
 
 
-def test_format_skip_label():
+def test_format_confirm_box(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    from sovereigninterpreter.display import format_confirm_box
+
+    box = format_confirm_box('print("hello")')
+    assert box == (
+        "────────────────────────────\n"
+        'print("hello")\n'
+        "────────────────────────────"
+    )
+
+
+def test_format_skip_label(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
     line = format_skip(
         "[SandboxBlocked] Execution skipped (shell): sandbox_mode=strict blocks shell."
     )
@@ -24,20 +38,24 @@ def test_format_skip_label():
     assert "sandbox_mode=strict blocks shell" in line
 
 
-def test_format_error_label():
+def test_format_error_label(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
     line = format_error("[PythonError] name 'x' is not defined")
     assert line == "[error] PythonError: name 'x' is not defined"
 
 
-def test_format_console_label():
+def test_format_console_label(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
     assert format_console("hello") == "[console] hello"
 
 
 def test_format_thinking_message():
     assert format_thinking() == "[model] thinking…"
+    assert format_thinking(0.8) == "[model] thinking… (0.8s)"
 
 
-def test_format_message_for_repl_roles():
+def test_format_message_for_repl_roles(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
     assert (
         format_message_for_repl(
             {"role": "assistant", "type": "message", "content": "Hello!"}
@@ -78,6 +96,18 @@ def test_format_message_for_repl_roles():
     assert format_message_for_repl({"role": "user", "type": "message", "content": "hi"}) is None
 
 
+def test_colored_label_respects_no_color(monkeypatch):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    colored = format_console("hello")
+    assert "\033[" in colored
+    assert "[console]" in colored
+    monkeypatch.setenv("NO_COLOR", "1")
+    plain = format_console("hello")
+    assert plain == "[console] hello"
+    assert "\033[" not in plain
+
+
 def test_thinking_printed_before_model(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "workspace").mkdir()
@@ -87,5 +117,6 @@ def test_thinking_printed_before_model(tmp_path, monkeypatch, capsys):
     si = SovereignInterpreter(config=cfg, llm=mock, use_memory=False)
     si.chat("hello", display=True)
     out = capsys.readouterr().out
-    assert "[model] thinking…" in out
+    assert "thinking…" in out
+    assert "(0." in out or "(1." in out or "(2." in out
     assert "[model] hi there" in out

@@ -8,6 +8,8 @@ Familiar chat → code → console ergonomics from an upstream interpreter frame
 
 > **Independence notice:** This project is an independent fork of an upstream interpreter framework (also described as the original reference implementation / local execution system (upstream)). It is not affiliated with, endorsed by, or sponsored by any organization. All cloud dependencies have been removed.
 
+> **Doctrine note:** Not affiliated with upstream; policy sandbox, not OS Seatbelt.
+
 ---
 
 ## Why SovereignInterpreter Exists
@@ -58,7 +60,7 @@ si.chat("Print hello from python")
 | **Kill-switch** | Create `.kill_switch` to halt chats and filesystem ops immediately |
 | **Allowed-roots sandbox** | `FilesystemMutator` may only touch configured directories |
 | **Confirmation gate** | `auto_run: false` by default — code requires approval |
-| **Turn / iteration ceiling** | `max_turns` / `max_iterations` bound execution loops |
+| **Iteration ceiling** | `max_iterations` bounds the chat→code→console loop |
 | **Sandbox modes** | `safe` / `strict` (default) / `full` gate Python, shell, and roots |
 | **Safety rules** | Local patterns block cloud API hosts, secret-like tokens, and destructive shells |
 | **Memory pack hooks** | `SovereignMemory.export_pack()` / `import_pack()` for portable local recall |
@@ -80,7 +82,7 @@ Execution happens only when you:
 
 Plain text (e.g. `hello`) is never treated as executable. If a weak model still emits fences, the code is shown and skipped unless you confirm or `%run`. User-authored code and model-authored code are handled differently on purpose.
 
-Related REPL helpers: `%model [name]`, `%models`, `%sandbox`, `!shell` (e.g. `!ls`).
+Related REPL helpers: `%help`, `%status`, `%undo`, `%memory export|import`, `%model [name]`, `%models`, `%sandbox`, `!shell` (e.g. `!ls`).
 
 ### Sandbox modes
 
@@ -169,6 +171,38 @@ flowchart TD
 
 ## Quickstart
 
+### 30-second studio demo
+
+Defaults: `sandbox=strict`, `auto_run=off` (confirm-first), local Ollama model.
+
+```shell
+pip install -e ".[dev]"
+ollama serve
+ollama pull llama3.2
+sovereigninterpreter
+```
+
+In the REPL:
+
+```text
+You: print(1)
+[run] python → print(1)
+[console] 1
+
+You: write a python script that prints hi
+[model] thinking…
+[model] thinking… (0.2s)
+[confirm] python
+────────────────────────────
+print("hi")
+────────────────────────────
+Run this code? [y/N]: y
+[model] Sure.
+[console] hi
+```
+
+Direct `print(1)` runs locally with no LLM. Chat that produces code waits for confirm, then runs.
+
 ### 1. Install
 
 Python 3.10+
@@ -212,10 +246,14 @@ Set `NO_COLOR=1` to disable decorative ANSI colors; labels remain text-only.
 Use `--auto-run` only when you accept local execution risk.
 
 REPL helpers:
-- Magic: `%reset`, `%auto_run on|off`, `%model [name]`, `%models`
-- Magic: `%sandbox [safe|strict|full]`, `%run`
-- Shell shortcut: `!ls` runs a local shell command without calling the model (requires `sandbox_mode: full`)
-- Labels: `[model]` / `[confirm]` / `[run]` / `[console]` / `[skip]` / `[error]`
+- Magic: `%help`, `%status`, `%info`, `%reset`, `%undo`, `%auto_run on|off`
+- Magic: `%save [path]`, `%load [path]`, `%memory export|import [path]`
+- Magic: `%model [name]`, `%models`, `%sandbox [safe|strict|full]`, `%run`
+- Multi-line: wrap a block in `"""` … `"""` (continuation prompt `... `)
+- One-shot: `sovereigninterpreter run "print(2+2)"` (explicit exec; no interactive confirm)
+- Shell shortcut: `!ls` runs a local shell command without calling the model (requires `sandbox_mode: full`; blocked → `[error]` + `[system]` tip to `%sandbox full`)
+- Labels: `[system]` / `[model]` / `[confirm]` / `[run]` / `[console]` / `[skip]` / `[error]`
+- Confirm shape: `[confirm] python` then a dim boxed code preview, then `Run this code? [y/N]:`
 
 ---
 
@@ -227,7 +265,6 @@ kill_switch: true
 kill_switch_path: .kill_switch
 default_model: llama3.2
 llm_base_url: http://127.0.0.1:11434/v1
-max_turns: 20
 max_iterations: 10
 auto_run: false
 sandbox_mode: strict
@@ -249,7 +286,6 @@ Environment overrides:
 | `SOVEREIGN_AUTO_RUN` | Run code without confirmation |
 | `GEN_LLM_BASE_URL` | Local chat completions base URL |
 | `GEN_LLM_MODEL` | Default model name |
-| `SOVEREIGN_MAX_TURNS` | Ceiling for turns |
 | `SOVEREIGN_MAX_ITERATIONS` | Per-chat code loop ceiling |
 | `NO_COLOR` | Disable CLI ANSI colors |
 

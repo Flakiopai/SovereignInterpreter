@@ -10,14 +10,19 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 
+from .errors import SovereignError
 
-class CloudForbiddenError(RuntimeError):
+
+class CloudForbiddenError(SovereignError):
     """Raised when a non-local LLM URL is blocked by sovereign policy."""
 
+    category = "CloudForbiddenError"
 
-class KillSwitchError(RuntimeError):
+
+class KillSwitchError(SovereignError):
     """Raised when the kill-switch is engaged."""
 
+    category = "KillSwitchError"
 
 _SANDBOX_MODES = frozenset({"safe", "strict", "full"})
 _LOCAL_HOSTS = frozenset(
@@ -95,7 +100,6 @@ class SovereignConfig(BaseModel):
     kill_switch_path: str = ".kill_switch"
     default_model: str = "llama3.2"
     llm_base_url: str = "http://127.0.0.1:11434/v1"
-    max_turns: int = 20
     max_iterations: int = 10
     auto_run: bool = False
     sandbox_mode: str = "strict"
@@ -226,8 +230,6 @@ def _env_overrides() -> Dict[str, Any]:
         overrides["llm_base_url"] = os.environ["GEN_LLM_BASE_URL"].rstrip("/")
     if "GEN_LLM_MODEL" in os.environ:
         overrides["default_model"] = os.environ["GEN_LLM_MODEL"]
-    if "SOVEREIGN_MAX_TURNS" in os.environ:
-        overrides["max_turns"] = int(os.environ["SOVEREIGN_MAX_TURNS"])
     if "SOVEREIGN_MAX_ITERATIONS" in os.environ:
         overrides["max_iterations"] = int(os.environ["SOVEREIGN_MAX_ITERATIONS"])
     if "SOVEREIGN_AUTO_RUN" in os.environ:

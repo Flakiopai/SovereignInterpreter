@@ -226,3 +226,53 @@ def test_display_tail_only_shows_current_turn(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "second reply" in out
     assert "first reply" not in out
+
+
+def test_undo_reverts_last_turn(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "workspace").mkdir()
+    cfg = SovereignConfig(kill_switch=False, auto_run=True, allowed_roots=["./workspace"])
+    mock = MockLocalLLM()
+    mock.set_texts(["first", "second"])
+    si = SovereignInterpreter(config=cfg, llm=mock, use_memory=False)
+    assert si.undo() == 0
+    si.chat("one")
+    si.chat("two")
+    assert any(m.get("content") == "second" for m in si.messages)
+    removed = si.undo()
+    assert removed >= 1
+    assert not any(m.get("content") == "second" for m in si.messages)
+    assert any(m.get("content") == "first" for m in si.messages)
+
+
+def test_export_import_messages_json(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "workspace").mkdir()
+    cfg = SovereignConfig(kill_switch=False, auto_run=True, allowed_roots=["./workspace"])
+    mock = MockLocalLLM()
+    mock.set_text("hello")
+    si = SovereignInterpreter(config=cfg, llm=mock, use_memory=False)
+    si.chat("hi")
+    path = si.export_messages(tmp_path / "conv")
+    assert path.name == "conv.json"
+    assert path.exists()
+    si2 = SovereignInterpreter(config=cfg, llm=MockLocalLLM(), use_memory=False)
+    si2.import_messages(path)
+    assert len(si2.messages) == len(si.messages)
+    assert si2.messages[0]["content"] == "hi"
+
+
+def test_export_import_memory_json(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg = SovereignConfig(kill_switch=False)
+    si = SovereignInterpreter(config=cfg, llm=MockLocalLLM(), use_memory=True)
+    assert si.memory is not None
+    si.memory.remember("prefer loopback", kind="long")
+    si.memory.remember("temp note", kind="short")
+    path = si.export_memory(tmp_path / "mem")
+    assert path.name == "mem.json"
+    si2 = SovereignInterpreter(config=cfg, llm=MockLocalLLM(), use_memory=True)
+    si2.import_memory(path)
+    pack = si2.memory.export_pack()
+    assert "prefer loopback" in pack.long_term
+    assert "temp note" in pack.short_term

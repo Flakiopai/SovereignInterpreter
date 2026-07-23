@@ -9,42 +9,204 @@ import argparse
 import sys
 
 from .config import load_config
-from .display import format_confirm, format_console, format_error, labeled
-from .errors import SandboxBlocked, format_exception
+from .display import format_confirm_box, format_console, format_error, labeled
+from .errors import format_exception
 from .interpreter import SovereignInterpreter
 from .llm import list_installed_models, resolve_installed_model
+from .util import paint
 
 
-_MAGIC_HELP = "%reset, %auto_run on|off, %model [name], %models, %run, %sandbox [safe|strict|full]"
+_MAGIC_HELP = (
+    "%help, %status, %info, %reset, %undo, %save [path], %load [path], "
+    "%memory export|import [path], %auto_run on|off, %model [name], %models, "
+    "%run, %sandbox [safe|strict|full]"
+)
+
+# Compact monochrome wordmark (dimmed at print time).
+_WORDMARK = "\n".join(
+    (
+        " ____ ___",
+        "/ ___|_ _|",
+        "\\___ \\| |",
+        " ___) | |",
+        "|____/|_|",
+    )
+)
 
 
 def _print_error(exc: BaseException, *, show_tracebacks: bool = False) -> None:
     print(format_error(format_exception(exc, show_tracebacks=show_tracebacks)))
 
 
-def _banner(auto_run: bool, sandbox_mode: str = "strict") -> None:
-    """Startup chrome — plain labeled lines (handbook aesthetic, no ANSI paint)."""
-    print(labeled("system", "SovereignInterpreter"))
-    print(labeled("system", "Local-first code execution interpreter"))
+def _dim(text: str) -> str:
+    return paint(text, "90")
+
+
+def _banner(
+    *,
+    version: str,
+    model: str,
+    endpoint: str,
+    sandbox_mode: str,
+    auto_run: bool,
+) -> None:
+    """Startup chrome — dim wordmark + boxed Ready; respects NO_COLOR."""
+    for line in _WORDMARK.splitlines():
+        print(_dim(line))
+    print(_dim(f" SovereignInterpreter v{version}"))
+    print()
+
+    auto = "on" if auto_run else "off"
+    rows = (
+        f" Ready  model={model}",
+        f" endpoint={endpoint}",
+        f" sandbox={sandbox_mode}  auto_run={auto}",
+    )
+    width = max(len(row) for row in rows) + 1
+    print(_dim("┌" + "─" * width + "┐"))
+    for row in rows:
+        print(_dim("│" + row.ljust(width) + "│"))
+    print(_dim("└" + "─" * width + "┘"))
+
     print(
         labeled(
             "system",
-            f"auto_run={'on' if auto_run else 'off'} (confirm before code when off)",
+            "Tip: try print(2+2) or %models — model code needs confirm or %run",
         )
     )
-    print(labeled("system", f"sandbox={sandbox_mode}"))
     print(
         labeled(
             "system",
-            "Safety: model code runs only on explicit request, confirm, or %run",
+            "NO_COLOR=1 for plain text. Exit: Ctrl-C / EOF. Magics: " + _MAGIC_HELP,
         )
     )
-    print(labeled("system", f"Exit with Ctrl-C or EOF. Magic: {_MAGIC_HELP}"))
-    print(labeled("system", "Shell shortcut: !command  (example: !ls)"))
+
+
+def _print_help(interpreter: SovereignInterpreter) -> None:
+    """Print magics, doctrine dials, and live session facts."""
+    cfg = interpreter.config
+    print(labeled("system", f"Magics: {_MAGIC_HELP}"))
+    print(labeled("system", "Shell: !command (requires sandbox=full)"))
+    print(
+        labeled(
+            "system",
+            "Doctrine dials: "
+            f"allow_cloud={cfg.allow_cloud}  "
+            f"kill_switch={cfg.kill_switch}  "
+            f"auto_run={'on' if cfg.auto_run else 'off'}  "
+            f"safety_enabled={cfg.safety_enabled}  "
+            f"max_iterations={cfg.max_iterations}",
+        )
+    )
+    print(
+        labeled(
+            "system",
+            "Sandbox modes: safe (no exec) | strict (python, workspace) | "
+            "full (python+shell, allowed_roots)",
+        )
+    )
+    print(
+        labeled(
+            "system",
+            f"sandbox={cfg.sandbox_mode}  kill_switch_path={cfg.kill_switch_path}",
+        )
+    )
+    print(
+        labeled(
+            "system",
+            f"model={interpreter.llm.model}  endpoint={cfg.llm_base_url}",
+        )
+    )
+    mem = interpreter.memory
+    if mem is None:
+        print(labeled("system", "Memory packs: off"))
+    else:
+        pack = mem.export_pack()
+        print(
+            labeled(
+                "system",
+                f"Memory packs: on  short={len(pack.short_term)}  "
+                f"long={len(pack.long_term)}  "
+                "API: SovereignMemory.export_pack() / import_pack()",
+            )
+        )
+
+
+def _print_status(interpreter: SovereignInterpreter) -> None:
+    """Print live session status."""
+    cfg = interpreter.config
+    roots = ", ".join(cfg.effective_roots())
+    kill = "engaged" if cfg.kill_switch_engaged() else "clear"
+    print(labeled("system", f"sandbox={cfg.sandbox_mode}"))
+    print(labeled("system", f"auto_run={'on' if cfg.auto_run else 'off'}"))
+    print(labeled("system", f"model={interpreter.llm.model}"))
+    print(labeled("system", f"endpoint={cfg.llm_base_url}"))
+    print(labeled("system", f"allowed_roots={roots}"))
+    print(
+        labeled(
+            "system",
+            f"kill_switch={kill}  path={cfg.kill_switch_path}  "
+            f"enabled={cfg.kill_switch}",
+        )
+    )
+    mem = interpreter.memory
+    if mem is None:
+        print(labeled("system", "memory=off"))
+    else:
+        pack = mem.export_pack()
+        print(
+            labeled(
+                "system",
+                f"memory=on  short={len(pack.short_term)}  long={len(pack.long_term)}",
+            )
+        )
+
+
+def _print_info(interpreter: SovereignInterpreter) -> None:
+    """Print local-only system / session info (no network)."""
+    import platform
+    from pathlib import Path
+
+    from . import __version__
+
+    cfg = interpreter.config
+    print(labeled("system", f"sovereigninterpreter={__version__}"))
+    print(labeled("system", f"python={sys.version.split()[0]}  impl={platform.python_implementation()}"))
+    print(labeled("system", f"platform={platform.platform()}"))
+    print(labeled("system", f"cwd={Path.cwd()}"))
+    print(labeled("system", f"model={interpreter.llm.model}  endpoint={cfg.llm_base_url}"))
+    print(
+        labeled(
+            "system",
+            f"sandbox={cfg.sandbox_mode}  auto_run={'on' if cfg.auto_run else 'off'}  "
+            f"allow_cloud={cfg.allow_cloud}",
+        )
+    )
+    print(
+        labeled(
+            "system",
+            f"kill_switch_path={cfg.kill_switch_path}  "
+            f"engaged={cfg.kill_switch_engaged()}",
+        )
+    )
+    print(labeled("system", f"messages={len(interpreter.messages)}"))
+    mem = interpreter.memory
+    if mem is None:
+        print(labeled("system", "memory=off"))
+    else:
+        pack = mem.export_pack()
+        print(
+            labeled(
+                "system",
+                f"memory=on  short={len(pack.short_term)}  long={len(pack.long_term)}",
+            )
+        )
 
 
 def _confirm(language: str, code: str) -> bool:
-    print(format_confirm(language, code))
+    """Show one [confirm] label, a dim code box, and one approval prompt."""
+    print(labeled("confirm", language))
+    print(format_confirm_box(code))
     try:
         answer = input("Run this code? [y/N]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
@@ -57,54 +219,134 @@ def _handle_magic(line: str, interpreter: SovereignInterpreter) -> None:
     """Handle REPL magic commands. Must run before any chat / code path."""
     parts = line[1:].strip().split()
     if not parts:
-        print(f"Empty magic command. Try {_MAGIC_HELP}")
+        print(labeled("system", f"Empty magic command. Try {_MAGIC_HELP}"))
         return
 
     cmd = parts[0].lower()
     args = parts[1:]
 
+    if cmd == "help":
+        _print_help(interpreter)
+        return
+
+    if cmd == "status":
+        _print_status(interpreter)
+        return
+
+    if cmd == "info":
+        _print_info(interpreter)
+        return
+
     if cmd == "reset":
         interpreter.reset()
-        print("Conversation reset.")
+        print(labeled("system", "Conversation reset."))
+        return
+
+    if cmd == "undo":
+        removed = interpreter.undo()
+        if removed == 0:
+            print(labeled("system", "Nothing to undo."))
+        else:
+            print(labeled("system", f"Undid last turn ({removed} messages)."))
+        return
+
+    if cmd == "save":
+        path = " ".join(args).strip() or "messages.json"
+        try:
+            out = interpreter.export_messages(path)
+        except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+            _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
+            return
+        print(labeled("system", f"Saved {len(interpreter.messages)} messages → {out}"))
+        return
+
+    if cmd == "load":
+        path = " ".join(args).strip() or "messages.json"
+        try:
+            src = interpreter.import_messages(path)
+        except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+            _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
+            return
+        print(labeled("system", f"Loaded {len(interpreter.messages)} messages ← {src}"))
+        return
+
+    if cmd == "memory":
+        if not args or args[0].lower() not in {"export", "import"}:
+            print(labeled("system", "Usage: %memory export|import [path]"))
+            return
+        action = args[0].lower()
+        path = " ".join(args[1:]).strip() or "memory.json"
+        try:
+            if action == "export":
+                out = interpreter.export_memory(path)
+                pack = interpreter.memory.export_pack() if interpreter.memory else None
+                counts = (
+                    f"short={len(pack.short_term)} long={len(pack.long_term)}"
+                    if pack
+                    else ""
+                )
+                print(labeled("system", f"Memory exported {counts} → {out}".strip()))
+            else:
+                src = interpreter.import_memory(path)
+                pack = interpreter.memory.export_pack() if interpreter.memory else None
+                counts = (
+                    f"short={len(pack.short_term)} long={len(pack.long_term)}"
+                    if pack
+                    else ""
+                )
+                print(labeled("system", f"Memory imported {counts} ← {src}".strip()))
+        except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+            _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
         return
 
     if cmd == "auto_run":
         if not args or args[0].lower() not in {"on", "off"}:
             state = "on" if interpreter.auto_run else "off"
-            print(f"auto_run is {state}. Usage: %auto_run on|off")
+            print(labeled("system", f"auto_run is {state}. Usage: %auto_run on|off"))
             return
         interpreter.auto_run = args[0].lower() == "on"
-        print(f"auto_run={'on' if interpreter.auto_run else 'off'}")
+        print(labeled("system", f"auto_run={'on' if interpreter.auto_run else 'off'}"))
         return
 
     if cmd == "models":
         models = list_installed_models()
         if not models:
-            print("No local models found. Is Ollama running?")
+            print(labeled("system", "No local models found. Is Ollama running?"))
             return
-        print("Installed models:")
+        print(labeled("system", "Installed models:"))
         for name in models:
             marker = " *" if name == interpreter.llm.model else ""
-            print(f"  {name}{marker}")
+            print(labeled("system", f"{name}{marker}"))
         return
 
     if cmd == "model":
         if not args:
-            print(f"Active model: {interpreter.llm.model}")
+            print(labeled("system", f"Active model: {interpreter.llm.model}"))
             return
         requested = " ".join(args).strip()
         installed = list_installed_models()
         resolved = resolve_installed_model(requested, installed)
         if resolved is None:
             if not installed:
-                print(f"Unknown model '{requested}'. No local models found (is Ollama running?).")
+                print(
+                    labeled(
+                        "system",
+                        f"Unknown model '{requested}'. "
+                        "No local models found (is Ollama running?).",
+                    )
+                )
             else:
                 available = ", ".join(installed)
-                print(f"Unknown model '{requested}'. Available: {available}")
+                print(
+                    labeled(
+                        "system",
+                        f"Unknown model '{requested}'. Available: {available}",
+                    )
+                )
             return
         interpreter.llm.model = resolved
         interpreter.config.default_model = resolved
-        print(f"Active model: {resolved}")
+        print(labeled("system", f"Active model: {resolved}"))
         return
 
     if cmd == "run":
@@ -118,35 +360,33 @@ def _handle_magic(line: str, interpreter: SovereignInterpreter) -> None:
 
     if cmd == "sandbox":
         if not args:
-            print(f"sandbox={interpreter.config.sandbox_mode}")
+            print(labeled("system", f"sandbox={interpreter.config.sandbox_mode}"))
             return
         mode = args[0].strip().lower()
         if mode not in {"safe", "strict", "full"}:
-            print("Usage: %sandbox safe|strict|full")
+            print(labeled("system", "Usage: %sandbox safe|strict|full"))
             return
         interpreter.config.sandbox_mode = mode
         # Refresh FS policy for the live mode change.
         files = interpreter.computer.files
         files.roots = interpreter.config.resolved_roots(files.base)
         files.allow_delete = interpreter.config.allow_delete_default()
-        print(f"sandbox={mode}")
+        print(labeled("system", f"sandbox={mode}"))
         return
 
-    print(f"Unknown magic %{cmd}. Available: {_MAGIC_HELP}")
+    print(labeled("system", f"Unknown magic %{cmd}. Available: {_MAGIC_HELP}"))
 
 
 def _handle_shell(line: str, interpreter: SovereignInterpreter) -> None:
     """Run `!command` as a local shell command — never send to the LLM."""
     command = line[1:].strip()
     if not command:
-        print("Empty shell command. Example: !ls")
+        print(labeled("system", "Empty shell command. Example: !ls"))
         return
     if not interpreter.config.allows_shell():
-        blocked = SandboxBlocked(
-            f"Shell blocked by sandbox_mode={interpreter.config.sandbox_mode}. "
-            "Use %sandbox full to enable."
-        )
-        _print_error(blocked, show_tracebacks=interpreter.config.show_tracebacks)
+        mode = interpreter.config.sandbox_mode
+        print(labeled("error", f"Shell blocked by sandbox={mode}"))
+        print(labeled("system", "Tip: use %sandbox full to enable shell commands"))
         return
     try:
         output = interpreter.computer.run("shell", command)
@@ -156,26 +396,46 @@ def _handle_shell(line: str, interpreter: SovereignInterpreter) -> None:
     print(format_console(output))
 
 
+def _read_user_input(prompt: str = "You: ") -> str:
+    """Read one line, or a triple-quoted block across lines."""
+    message = input(prompt)
+    if '"""' not in message:
+        return message
+    # Opening and closing on the same line.
+    if message.count('"""') >= 2:
+        return message
+    lines = [message]
+    while True:
+        line = input("... ")
+        lines.append(line)
+        if '"""' in line:
+            break
+    return "\n".join(lines)
+
+
 def run_repl(*, auto_run: bool | None = None) -> int:
     """Interactive stdin loop. Ctrl-C / EOF exits cleanly."""
+    from . import __version__
+
     config = load_config()
     if auto_run is not None:
         config.auto_run = auto_run
     config.assert_not_killed()
-    _banner(config.auto_run, config.sandbox_mode)
 
     interpreter = SovereignInterpreter(config=config)
-    print(
-        labeled(
-            "system",
-            f"Ready (model={interpreter.llm.model}, endpoint={config.llm_base_url})",
-        )
+    _banner(
+        version=__version__,
+        model=interpreter.llm.model,
+        endpoint=config.llm_base_url,
+        sandbox_mode=config.sandbox_mode,
+        auto_run=config.auto_run,
     )
 
     while True:
         try:
             # Handbook prompt aesthetic: plain "You:" (no ANSI paint).
-            user_input = input("You: ")
+            # Triple quotes (""") open a multi-line block ended by closing """.
+            user_input = _read_user_input("You: ")
         except (EOFError, KeyboardInterrupt):
             print()
             return 0
@@ -203,6 +463,20 @@ def run_repl(*, auto_run: bool | None = None) -> int:
             continue
 
 
+def run_once(prompt: str) -> int:
+    """One-shot local exec: ``sovereigninterpreter run "print(2+2)"``."""
+    config = load_config()
+    config.assert_not_killed()
+    interpreter = SovereignInterpreter(config=config)
+    try:
+        # Invoking `run` is an explicit operator execution request.
+        interpreter.chat(prompt, display=True, confirm=lambda _language, _code: True)
+    except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+        _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="sovereigninterpreter",
@@ -216,8 +490,14 @@ def main(argv: list[str] | None = None) -> int:
         "command",
         nargs="?",
         default="repl",
-        choices=["repl", "version"],
+        choices=["repl", "version", "run"],
         help="Command to run (default: repl)",
+    )
+    parser.add_argument(
+        "prompt",
+        nargs="*",
+        default=[],
+        help='Code or message for run, e.g. run "print(2+2)"',
     )
     parser.add_argument(
         "--auto-run",
@@ -231,6 +511,12 @@ def main(argv: list[str] | None = None) -> int:
 
         print(__version__)
         return 0
+
+    if args.command == "run":
+        text = " ".join(args.prompt).strip()
+        if not text:
+            parser.error('run requires a prompt, e.g. sovereigninterpreter run "print(2+2)"')
+        return run_once(text)
 
     return run_repl(auto_run=True if args.auto_run else None)
 

@@ -20,7 +20,7 @@ from .memory import MemoryPack, SovereignMemory
 from .routing import LocalMessageRouter, Message
 from .safety import SafetyRules, SafetyViolation
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"
 
 __all__ = [
     "SovereignInterpreter",

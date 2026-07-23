@@ -5,10 +5,13 @@ from __future__ import annotations
 import re
 from typing import Iterable, Optional, Sequence
 
+from .errors import SovereignError
 
-class SafetyViolation(RuntimeError):
+
+class SafetyViolation(SovereignError):
     """Raised when input violates sovereign safety rules."""
 
+    category = "SafetyViolation"
 
 # Phrases that mean the user explicitly wants code to run.
 _EXEC_REQUEST_RE = re.compile(

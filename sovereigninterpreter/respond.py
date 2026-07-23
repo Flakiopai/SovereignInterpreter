@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Callable, List, Optional
 
 from .computer import Computer
@@ -31,6 +32,12 @@ from .terminal import Terminal
 
 
 ConfirmFn = Callable[[str, str], bool]
+
+
+def _finish_thinking(elapsed: float) -> None:
+    """Replace the in-place thinking line without leaving a \\r flash."""
+    pad = max(len(format_thinking()), len(format_thinking(elapsed)), 40)
+    print("\r" + " " * pad + "\r" + format_thinking(elapsed), flush=True)
 
 
 def _validate_code_block(language: str, code: str) -> Optional[SovereignError]:
@@ -142,15 +149,18 @@ def respond(
         safety.check_many(texts)
 
         chat_messages = to_chat_messages(list(messages) + produced, system=system)
-        print(format_thinking(), flush=True)
+        started = time.monotonic()
+        print(format_thinking(), end="\r", flush=True)
         try:
             reply = llm.complete(chat_messages)
         except ModelOutputError as exc:
+            _finish_thinking(time.monotonic() - started)
             err = _console_error(exc, show_tracebacks=show_tb)
             produced.append(err)
             messages.append(err)
             break
         except Exception as exc:  # noqa: BLE001 — normalize unexpected LLM failures
+            _finish_thinking(time.monotonic() - started)
             wrapped = ModelOutputError(
                 f"Local LLM request failed: {exc}",
                 detail=str(exc),
@@ -159,6 +169,7 @@ def respond(
             produced.append(err)
             messages.append(err)
             break
+        _finish_thinking(time.monotonic() - started)
 
         safety.check(reply)
 

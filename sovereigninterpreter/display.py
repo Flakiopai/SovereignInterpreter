@@ -1,26 +1,51 @@
-"""Minimal REPL display labels (no color)."""
+"""Minimal REPL display labels (soft ANSI on select tags; respects NO_COLOR)."""
 
 from __future__ import annotations
 
 import re
 from typing import Any, Dict, Optional, Tuple
 
+from .util import paint
+
 
 _SKIP_CATEGORIES = frozenset({"ExecutionDenied", "SandboxBlocked"})
 _ERROR_CATEGORIES = frozenset(
-    {"PythonError", "ShellError", "ModelOutputError", "TerminalError", "Error"}
+    {
+        "PythonError",
+        "ShellError",
+        "ModelOutputError",
+        "TerminalError",
+        "Error",
+        "KillSwitchError",
+        "CloudForbiddenError",
+        "SafetyViolation",
+    }
 )
 _CATEGORY_RE = re.compile(r"^\[([A-Za-z]+)\]\s*(.*)$", re.DOTALL)
 
+# Soft ANSI codes applied only to the [tag] — not the message body.
+_LABEL_COLORS = {
+    "confirm": "33",  # yellow
+    "console": "90",  # dim
+    "error": "31",  # red
+    "skip": "33",  # yellow
+    "system": "36",  # cyan
+}
+
 
 def labeled(kind: str, text: str) -> str:
-    """Return a bracketed REPL label line."""
+    """Return a bracketed REPL label line; color the tag when allowed."""
     body = text if text is not None else ""
-    return f"[{kind}] {body}"
+    tag = f"[{kind}]"
+    color = _LABEL_COLORS.get(kind)
+    if color:
+        tag = paint(tag, color)
+    return f"{tag} {body}"
 
-
-def format_thinking() -> str:
-    return labeled("model", "thinking…")
+def format_thinking(elapsed: float | None = None) -> str:
+    if elapsed is None:
+        return labeled("model", "thinking…")
+    return labeled("model", f"thinking… ({elapsed:.1f}s)")
 
 
 def format_model(text: str) -> str:
@@ -30,6 +55,13 @@ def format_model(text: str) -> str:
 def format_confirm(language: str, code: str, *, max_len: int = 120) -> str:
     preview = _one_line(code, max_len=max_len)
     return labeled("confirm", f"{language} → {preview}")
+
+
+def format_confirm_box(code: str, *, width: int = 28) -> str:
+    """Dim horizontal rules around the full code body for confirm UI."""
+    rule = paint("─" * width, "90")
+    body = (code or "").rstrip("\n")
+    return f"{rule}\n{body}\n{rule}"
 
 
 def format_run(language: str, code: str, *, max_len: int = 120) -> str:

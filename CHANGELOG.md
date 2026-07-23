@@ -5,23 +5,61 @@ All notable changes to SovereignInterpreter are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] — 2026-07-23
+## [1.0.0] — 2026-07-23 — Sovereign Edition
+
+First stable **Sovereign Edition** release. Local-first chat→code→console with doctrine enforced in code.
+
+### Added
+- Sandbox modes: `safe` / `strict` (default) / `full`
+- Typed error envelopes remapped to REPL `[error]` / `[skip]`
+- Display labels: `[system]`, `[model]`, `[confirm]`, `[run]`, `[console]`, `[skip]`, `[error]`
+- Soft ANSI on label tags only; respects `NO_COLOR`
+- Dim SI wordmark + boxed Ready banner
+- Magics: `%help`, `%status`, `%info`, `%undo`, `%save`/`%load`, `%memory export|import` (plus `%reset`, `%auto_run`, `%model`/`%models`, `%run`, `%sandbox`)
+- Confirm boxed full-code preview; thinking elapsed timer (`thinking… (Ns)`)
+- Multi-line `"""` input; one-shot `sovereigninterpreter run "…"`
+- Operator handbook, smoke-test path, CLI offline smoke tests
+
+### Fixed
+- Confirm UI dedupe (single `[confirm]` + box + `[y/N]`)
+- Sandbox denials emit `[skip]` only (no misleading `[run]`)
+- Empty `!` and magic status lines use `[system]` envelopes
+- Thinking timer clears in-place `\r` flash before elapsed line
+
+### Notes
+- Doctrine unchanged: policy sandbox (not OS Seatbelt), kill-switch, universal fence rule, `allow_cloud: false` by default
+- 72 offline unit tests passing
+- Packaging: `__version__` / `setup.cfg` / `sovereigninterpreter version` aligned at **1.0.0**
+
+## [0.3.0] — 2026-07-23 — Sovereign Edition (pre-v1.0 polish)
 
 ### Added
 - Sandbox modes: `safe` (no execution), `strict` (Python only, workspace root), `full` (Python + shell + configured roots)
 - `%sandbox [safe|strict|full]` REPL magic and banner `sandbox=` indicator
 - Unified error envelope (`SovereignError`) with categories: `PythonError`, `ShellError`, `ModelOutputError`, `SandboxBlocked`, `ExecutionDenied`
-- REPL display labels: `[model]`, `[confirm]`, `[run]`, `[console]`, `[skip]`, `[error]`, plus thinking and confirm/run previews
+- REPL display labels: `[system]`, `[model]`, `[confirm]`, `[run]`, `[console]`, `[skip]`, `[error]`
+- Soft ANSI on label tags only (`confirm`/`console`/`error`/`skip`/`system`); respects `NO_COLOR`
+- Dim SI wordmark + boxed Ready banner (model / endpoint / sandbox / auto_run)
+- Magics: `%help`, `%status`, `%info`, `%undo`, `%save`/`%load`, `%memory export|import`
+- Confirm boxed full-code preview; thinking elapsed timer (`thinking… (Ns)`)
+- Multi-line `"""` input; one-shot `sovereigninterpreter run "…"`
 - `sandbox_mode` and `show_tracebacks` configuration keys
 
 ### Changed
 - Terminal runners route through `_run_python` / `_run_shell` with sandbox checks before execution
 - Filesystem policy uses `effective_roots()` so safe/strict jail to `./workspace`
 - `!command` is blocked when sandbox mode is not `full`
+- Removed unused `max_turns` config key (loop bound remains `max_iterations`)
+
+### Fixed
+- Confirm UI no longer double-prints `[confirm]` / code after approval
+- Sandbox denials emit `[skip]` only (no misleading `[run]` before the skip)
+- Confirm prompt is truthful `[y/N]` (no advertised editor path)
 
 ### Notes
 - Universal safety rule, intent detection, model magics, and `%reset` behavior are unchanged from 0.2.0
-- 61 offline unit tests passing
+- 67 offline unit tests passing
+- Release tagline: **Sovereign Edition — pre-v1.0 polish**
 
 ## [0.2.0] — 2026-07-22
 
