@@ -11,6 +11,8 @@ llm_base_url: http://127.0.0.1:11434/v1
 max_turns: 20
 max_iterations: 10
 auto_run: false
+sandbox_mode: strict
+show_tracebacks: false
 allowed_roots:
   - ./workspace
   - ./examples

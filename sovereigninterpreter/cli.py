@@ -9,30 +9,42 @@ import argparse
 import sys
 
 from .config import load_config
+from .display import format_confirm, format_console, format_error, labeled
+from .errors import SandboxBlocked, format_exception
 from .interpreter import SovereignInterpreter
 from .llm import list_installed_models, resolve_installed_model
-from .util import paint, use_color
 
 
-_MAGIC_HELP = "%reset, %auto_run on|off, %model [name], %models, %run"
+_MAGIC_HELP = "%reset, %auto_run on|off, %model [name], %models, %run, %sandbox [safe|strict|full]"
 
 
-def _banner(auto_run: bool) -> None:
-    title = paint("SovereignInterpreter", "1") if use_color() else "SovereignInterpreter"
-    print(title)
-    print("Local-first code execution interpreter")
-    print(f"auto_run={'on' if auto_run else 'off'} (confirm before code when off)")
-    print("Safety: model code runs only on explicit request, confirm, or %run")
-    if not use_color():
-        print("(NO_COLOR enabled — labels are plain text)")
-    print(f"Exit with Ctrl-C or EOF. Magic: {_MAGIC_HELP}")
-    print("Shell shortcut: !command  (example: !ls)")
+def _print_error(exc: BaseException, *, show_tracebacks: bool = False) -> None:
+    print(format_error(format_exception(exc, show_tracebacks=show_tracebacks)))
+
+
+def _banner(auto_run: bool, sandbox_mode: str = "strict") -> None:
+    """Startup chrome — plain labeled lines (handbook aesthetic, no ANSI paint)."""
+    print(labeled("system", "SovereignInterpreter"))
+    print(labeled("system", "Local-first code execution interpreter"))
+    print(
+        labeled(
+            "system",
+            f"auto_run={'on' if auto_run else 'off'} (confirm before code when off)",
+        )
+    )
+    print(labeled("system", f"sandbox={sandbox_mode}"))
+    print(
+        labeled(
+            "system",
+            "Safety: model code runs only on explicit request, confirm, or %run",
+        )
+    )
+    print(labeled("system", f"Exit with Ctrl-C or EOF. Magic: {_MAGIC_HELP}"))
+    print(labeled("system", "Shell shortcut: !command  (example: !ls)"))
 
 
 def _confirm(language: str, code: str) -> bool:
-    preview = code if len(code) <= 400 else code[:400] + "\n..."
-    label = paint("Confirm", "33") if use_color() else "Confirm"
-    print(f"{label} run {language}?\n{preview}")
+    print(format_confirm(language, code))
     try:
         answer = input("Run this code? [y/N]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
@@ -99,10 +111,25 @@ def _handle_magic(line: str, interpreter: SovereignInterpreter) -> None:
         try:
             output = interpreter.run_last_code()
         except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
-            err = paint("Error", "31") if use_color() else "Error"
-            print(f"{err}: {exc}")
+            _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
             return
-        print(output)
+        print(format_console(output))
+        return
+
+    if cmd == "sandbox":
+        if not args:
+            print(f"sandbox={interpreter.config.sandbox_mode}")
+            return
+        mode = args[0].strip().lower()
+        if mode not in {"safe", "strict", "full"}:
+            print("Usage: %sandbox safe|strict|full")
+            return
+        interpreter.config.sandbox_mode = mode
+        # Refresh FS policy for the live mode change.
+        files = interpreter.computer.files
+        files.roots = interpreter.config.resolved_roots(files.base)
+        files.allow_delete = interpreter.config.allow_delete_default()
+        print(f"sandbox={mode}")
         return
 
     print(f"Unknown magic %{cmd}. Available: {_MAGIC_HELP}")
@@ -114,13 +141,19 @@ def _handle_shell(line: str, interpreter: SovereignInterpreter) -> None:
     if not command:
         print("Empty shell command. Example: !ls")
         return
+    if not interpreter.config.allows_shell():
+        blocked = SandboxBlocked(
+            f"Shell blocked by sandbox_mode={interpreter.config.sandbox_mode}. "
+            "Use %sandbox full to enable."
+        )
+        _print_error(blocked, show_tracebacks=interpreter.config.show_tracebacks)
+        return
     try:
         output = interpreter.computer.run("shell", command)
     except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
-        err = paint("Error", "31") if use_color() else "Error"
-        print(f"{err}: {exc}")
+        _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
         return
-    print(output)
+    print(format_console(output))
 
 
 def run_repl(*, auto_run: bool | None = None) -> int:
@@ -129,17 +162,20 @@ def run_repl(*, auto_run: bool | None = None) -> int:
     if auto_run is not None:
         config.auto_run = auto_run
     config.assert_not_killed()
-    _banner(config.auto_run)
+    _banner(config.auto_run, config.sandbox_mode)
 
     interpreter = SovereignInterpreter(config=config)
     print(
-        f"Ready (model={interpreter.llm.model}, endpoint={config.llm_base_url})"
+        labeled(
+            "system",
+            f"Ready (model={interpreter.llm.model}, endpoint={config.llm_base_url})",
+        )
     )
 
     while True:
         try:
-            prompt_label = paint("You", "90") if use_color() else "You"
-            user_input = input(f"{prompt_label}: ")
+            # Handbook prompt aesthetic: plain "You:" (no ANSI paint).
+            user_input = input("You: ")
         except (EOFError, KeyboardInterrupt):
             print()
             return 0
@@ -163,8 +199,7 @@ def run_repl(*, auto_run: bool | None = None) -> int:
             # auto_run only skips the prompt when the user requested execution.
             interpreter.chat(user_input, display=True, confirm=_confirm)
         except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
-            err = paint("Error", "31") if use_color() else "Error"
-            print(f"{err}: {exc}")
+            _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
             continue
 
 

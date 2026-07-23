@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CloudForbiddenError(RuntimeError):
@@ -19,6 +19,7 @@ class KillSwitchError(RuntimeError):
     """Raised when the kill-switch is engaged."""
 
 
+_SANDBOX_MODES = frozenset({"safe", "strict", "full"})
 _LOCAL_HOSTS = frozenset(
     {
         "localhost",
@@ -97,9 +98,43 @@ class SovereignConfig(BaseModel):
     max_turns: int = 20
     max_iterations: int = 10
     auto_run: bool = False
+    sandbox_mode: str = "strict"
+    show_tracebacks: bool = False
     allowed_roots: List[str] = Field(default_factory=lambda: ["./workspace", "./examples"])
     redact_patterns: List[str] = Field(default_factory=list)
     safety_enabled: bool = True
+
+    @field_validator("sandbox_mode")
+    @classmethod
+    def _normalize_sandbox_mode(cls, value: str) -> str:
+        mode = (value or "strict").strip().lower()
+        if mode not in _SANDBOX_MODES:
+            raise ValueError(
+                f"Invalid sandbox_mode '{value}'. Expected one of: {', '.join(sorted(_SANDBOX_MODES))}"
+            )
+        return mode
+
+    def allows_python(self) -> bool:
+        """safe blocks all execution; strict/full allow Python."""
+        return self.sandbox_mode in {"strict", "full"}
+
+    def allows_shell(self) -> bool:
+        """Only full mode allows shell / !command."""
+        return self.sandbox_mode == "full"
+
+    def effective_roots(self) -> List[str]:
+        """
+        Roots enforced for filesystem policy.
+
+        safe/strict → ./workspace only; full → configured allowed_roots.
+        """
+        if self.sandbox_mode in {"safe", "strict"}:
+            return ["./workspace"]
+        return list(self.allowed_roots)
+
+    def allow_delete_default(self) -> bool:
+        """v1: delete stays off in every sandbox mode."""
+        return False
 
     def is_local_url(self, url: str) -> bool:
         parsed = urlparse(url)
@@ -141,7 +176,7 @@ class SovereignConfig(BaseModel):
         root = Path(base or Path.cwd()).resolve()
         return [
             (root / Path(p)).resolve() if not Path(p).is_absolute() else Path(p).resolve()
-            for p in self.allowed_roots
+            for p in self.effective_roots()
         ]
 
     def redact(self, text: str) -> str:
@@ -197,6 +232,15 @@ def _env_overrides() -> Dict[str, Any]:
         overrides["max_iterations"] = int(os.environ["SOVEREIGN_MAX_ITERATIONS"])
     if "SOVEREIGN_AUTO_RUN" in os.environ:
         overrides["auto_run"] = os.environ["SOVEREIGN_AUTO_RUN"].lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+    if "SOVEREIGN_SANDBOX_MODE" in os.environ:
+        overrides["sandbox_mode"] = os.environ["SOVEREIGN_SANDBOX_MODE"]
+    if "SOVEREIGN_SHOW_TRACEBACKS" in os.environ:
+        overrides["show_tracebacks"] = os.environ["SOVEREIGN_SHOW_TRACEBACKS"].lower() in {
             "1",
             "true",
             "yes",

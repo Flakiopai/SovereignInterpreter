@@ -28,7 +28,8 @@ class FilesystemMutator:
     ):
         self.config = config or load_config()
         self.base = Path(base or Path.cwd()).resolve()
-        self.allow_delete = allow_delete
+        # Explicit True wins; otherwise use sandbox mode default (False in v1).
+        self.allow_delete = True if allow_delete else self.config.allow_delete_default()
         self.roots = self.config.resolved_roots(self.base)
 
     def resolve(self, path: Union[str, Path]) -> Path:

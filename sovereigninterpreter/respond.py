@@ -6,6 +6,14 @@ from typing import Callable, List, Optional
 
 from .computer import Computer
 from .config import SovereignConfig
+from .display import format_thinking
+from .errors import (
+    ExecutionDenied,
+    ModelOutputError,
+    PythonError,
+    SandboxBlocked,
+    SovereignError,
+)
 from .llm import LocalLLM, MockLocalLLM
 from .memory import SovereignMemory
 from .messages import (
@@ -25,22 +33,26 @@ from .terminal import Terminal
 ConfirmFn = Callable[[str, str], bool]
 
 
-def _validate_code_block(language: str, code: str) -> Optional[str]:
+def _validate_code_block(language: str, code: str) -> Optional[SovereignError]:
     """
-    Return a clean error string if the block is not runnable, else None.
+    Return a categorized error if the block is not runnable, else None.
 
-    Plain text without fences never reaches here. Unsupported languages and
-    Python syntax errors are rejected before execution.
+    Plain text without fences never reaches here.
     """
     lang = (language or "").lower().strip()
     if lang not in Terminal.SUPPORTED:
         supported = ", ".join(Terminal.SUPPORTED)
-        return f"Unsupported language '{language}'. Supported: {supported}"
+        return ModelOutputError(
+            f"Unsupported language '{language}'. Supported: {supported}"
+        )
     if lang == "python":
         try:
             compile(code, "<assistant>", "exec")
         except SyntaxError as exc:
-            return f"Malformed Python code: {exc.msg} (line {exc.lineno})"
+            return PythonError(
+                f"Malformed Python code: {exc.msg} (line {exc.lineno})",
+                detail=str(exc),
+            )
     return None
 
 
@@ -76,6 +88,10 @@ def _should_execute(
     return False, False
 
 
+def _console_error(err: SovereignError, *, show_tracebacks: bool) -> MessageDict:
+    return computer_console(err.format(show_tracebacks=show_tracebacks))
+
+
 def respond(
     *,
     messages: List[MessageDict],
@@ -102,6 +118,7 @@ def respond(
     config.assert_not_killed()
     iterations = max_iterations if max_iterations is not None else config.max_iterations
     system = system_message or DEFAULT_SYSTEM_MESSAGE
+    show_tb = bool(config.show_tracebacks)
 
     last_user = _last_user_text(messages)
     execution_requested = user_requests_execution(last_user)
@@ -125,7 +142,24 @@ def respond(
         safety.check_many(texts)
 
         chat_messages = to_chat_messages(list(messages) + produced, system=system)
-        reply = llm.complete(chat_messages)
+        print(format_thinking(), flush=True)
+        try:
+            reply = llm.complete(chat_messages)
+        except ModelOutputError as exc:
+            err = _console_error(exc, show_tracebacks=show_tb)
+            produced.append(err)
+            messages.append(err)
+            break
+        except Exception as exc:  # noqa: BLE001 — normalize unexpected LLM failures
+            wrapped = ModelOutputError(
+                f"Local LLM request failed: {exc}",
+                detail=str(exc),
+            )
+            err = _console_error(wrapped, show_tracebacks=show_tb)
+            produced.append(err)
+            messages.append(err)
+            break
+
         safety.check(reply)
 
         blocks = extract_code_blocks(reply)
@@ -179,23 +213,48 @@ def respond(
                     f"Execution skipped ({language}): no explicit execution request. "
                     "Ask to run/execute, enter Python directly, confirm, or use %run."
                 )
-            skip = computer_console(reason)
+            denied = ExecutionDenied(reason)
+            skip = _console_error(denied, show_tracebacks=show_tb)
             produced.append(skip)
             messages.append(skip)
             # Do not continue the LLM loop after an unsolicited fence.
             break
 
         validation_error = _validate_code_block(language, code)
-        if validation_error:
-            err = computer_console(validation_error)
+        if validation_error is not None:
+            err = _console_error(validation_error, show_tracebacks=show_tb)
             produced.append(err)
             messages.append(err)
             break
 
+        lang = (language or "").lower().strip()
+        if lang == "python" and not config.allows_python():
+            blocked = SandboxBlocked(
+                f"Execution skipped (python): sandbox_mode={config.sandbox_mode} blocks execution."
+            )
+            skip = _console_error(blocked, show_tracebacks=show_tb)
+            produced.append(skip)
+            messages.append(skip)
+            break
+        if lang == "shell" and not config.allows_shell():
+            blocked = SandboxBlocked(
+                f"Execution skipped (shell): sandbox_mode={config.sandbox_mode} blocks shell."
+            )
+            skip = _console_error(blocked, show_tracebacks=show_tb)
+            produced.append(skip)
+            messages.append(skip)
+            break
+
         try:
             output = computer.run(language, code)
+        except SovereignError as exc:
+            err = _console_error(exc, show_tracebacks=show_tb)
+            produced.append(err)
+            messages.append(err)
+            break
         except Exception as exc:  # noqa: BLE001 — surface cleanly, do not retry
-            err = computer_console(f"Execution error: {exc}")
+            wrapped = PythonError(f"Execution error: {exc}", detail=str(exc))
+            err = _console_error(wrapped, show_tracebacks=show_tb)
             produced.append(err)
             messages.append(err)
             break
@@ -223,6 +282,11 @@ def _looks_like_failure(output: str) -> bool:
         "IndentationError:",
         "Execution error:",
         "Malformed Python code:",
+        "[PythonError]",
+        "[ShellError]",
+        "[ModelOutputError]",
+        "[SandboxBlocked]",
+        "[ExecutionDenied]",
     )
     return any(marker in text for marker in markers)
 

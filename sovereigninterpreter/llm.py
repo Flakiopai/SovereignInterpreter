@@ -16,6 +16,8 @@ from typing import Any, Dict, Generator, Iterable, List, Optional, Union, TYPE_C
 
 from pydantic import BaseModel
 
+from .errors import ModelOutputError
+
 if TYPE_CHECKING:
     from .config import SovereignConfig
 
@@ -307,14 +309,21 @@ class LocalLLM:
                 raw = response.read().decode("utf-8")
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"Local LLM HTTP {e.code} at {self._url(path)}: {detail}"
+            raise ModelOutputError(
+                f"Local LLM HTTP {e.code} at {self._url(path)}",
+                detail=detail,
             ) from e
         except urllib.error.URLError as e:
-            raise RuntimeError(
-                f"Local LLM unreachable at {self.base_url}: {e.reason}"
+            raise ModelOutputError(
+                f"Local LLM unreachable at {self.base_url}: {e.reason}",
             ) from e
-        return json.loads(raw)
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ModelOutputError(
+                "Local LLM returned malformed JSON",
+                detail=raw[:2000],
+            ) from exc
 
     def _stream(
         self, path: str, body: dict
@@ -330,12 +339,13 @@ class LocalLLM:
             response = urllib.request.urlopen(request, timeout=self.timeout)
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"Local LLM HTTP {e.code} at {self._url(path)}: {detail}"
+            raise ModelOutputError(
+                f"Local LLM HTTP {e.code} at {self._url(path)}",
+                detail=detail,
             ) from e
         except urllib.error.URLError as e:
-            raise RuntimeError(
-                f"Local LLM unreachable at {self.base_url}: {e.reason}"
+            raise ModelOutputError(
+                f"Local LLM unreachable at {self.base_url}: {e.reason}",
             ) from e
 
         with response:
@@ -347,19 +357,38 @@ class LocalLLM:
                     line = line[len("data:") :].strip()
                 if line == "[DONE]":
                     break
-                data = json.loads(line)
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ModelOutputError(
+                        "Local LLM stream returned malformed JSON",
+                        detail=line[:2000],
+                    ) from exc
                 yield chunk_from_dict(data)
 
     def complete(self, messages: List[dict], model: Optional[str] = None) -> str:
         """Convenience helper returning assistant text content."""
-        completion = self.chat.completions.create(
-            model=model or self.model,
-            messages=messages,
-            stream=False,
-        )
-        assert isinstance(completion, ChatCompletion)
+        try:
+            completion = self.chat.completions.create(
+                model=model or self.model,
+                messages=messages,
+                stream=False,
+            )
+        except ModelOutputError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — normalize to envelope
+            raise ModelOutputError(
+                f"Local LLM request failed: {exc}",
+                detail=str(exc),
+            ) from exc
+        if not isinstance(completion, ChatCompletion):
+            raise ModelOutputError("Local LLM returned an unexpected completion type")
+        if not completion.choices:
+            raise ModelOutputError("Local LLM returned no choices")
         content = completion.choices[0].message.content
-        return content or ""
+        if content is None:
+            raise ModelOutputError("Local LLM returned an empty reply")
+        return content
 
 
 def create_completion(

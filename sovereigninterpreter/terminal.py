@@ -10,11 +10,14 @@ from pathlib import Path
 from typing import Optional, Union
 
 from .config import SovereignConfig, load_config
+from .errors import PythonError, SandboxBlocked, ShellError, SovereignError
 from .util import truncate_output
 
 
-class TerminalError(RuntimeError):
+class TerminalError(SovereignError):
     """Raised when local code execution fails at the runner layer."""
+
+    category = "TerminalError"
 
 
 class Terminal:
@@ -54,6 +57,14 @@ class Terminal:
             raise TerminalError(
                 f"Unsupported language: {language}. Supported: {', '.join(self.SUPPORTED)}"
             )
+        if lang == "python" and not self.config.allows_python():
+            raise SandboxBlocked(
+                f"sandbox_mode={self.config.sandbox_mode} blocks Python execution."
+            )
+        if lang == "shell" and not self.config.allows_shell():
+            raise SandboxBlocked(
+                f"sandbox_mode={self.config.sandbox_mode} blocks shell execution."
+            )
         if lang == "python":
             return self._run_python(code)
         return self._run_shell(code)
@@ -83,7 +94,10 @@ class Terminal:
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise TerminalError(f"Python execution timed out after {self.timeout}s") from exc
+            raise PythonError(
+                f"Python execution timed out after {self.timeout}s",
+                detail=str(exc),
+            ) from exc
         finally:
             try:
                 os.unlink(script_path)
@@ -95,10 +109,16 @@ class Terminal:
             parts.append(completed.stdout)
         if completed.stderr:
             parts.append(completed.stderr)
-        if completed.returncode != 0 and not parts:
-            parts.append(f"Process exited with code {completed.returncode}")
-        output = "".join(parts).rstrip() or "(no output)"
-        return truncate_output(output, self.max_output)
+        output = "".join(parts).rstrip()
+        if completed.returncode != 0:
+            summary = _summarize_process_output(output) or (
+                f"Process exited with code {completed.returncode}"
+            )
+            raise PythonError(
+                summary,
+                detail=truncate_output(output, self.max_output) if output else None,
+            )
+        return truncate_output(output, self.max_output) if output else "(no output)"
 
     def _run_shell(self, code: str) -> str:
         self.cwd.mkdir(parents=True, exist_ok=True)
@@ -113,14 +133,33 @@ class Terminal:
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise TerminalError(f"Shell execution timed out after {self.timeout}s") from exc
+            raise ShellError(
+                f"Shell execution timed out after {self.timeout}s",
+                detail=str(exc),
+            ) from exc
 
         parts = []
         if completed.stdout:
             parts.append(completed.stdout)
         if completed.stderr:
             parts.append(completed.stderr)
-        if completed.returncode != 0 and not parts:
-            parts.append(f"Process exited with code {completed.returncode}")
-        output = "".join(parts).rstrip() or "(no output)"
-        return truncate_output(output, self.max_output)
+        output = "".join(parts).rstrip()
+        if completed.returncode != 0:
+            summary = _summarize_process_output(output) or (
+                f"Process exited with code {completed.returncode}"
+            )
+            raise ShellError(
+                summary,
+                detail=truncate_output(output, self.max_output) if output else None,
+            )
+        return truncate_output(output, self.max_output) if output else "(no output)"
+
+
+def _summarize_process_output(output: str) -> Optional[str]:
+    lines = [ln.strip() for ln in (output or "").splitlines() if ln.strip()]
+    if not lines:
+        return None
+    for line in reversed(lines):
+        if "Error" in line or line.startswith("Exception"):
+            return line
+    return lines[-1]

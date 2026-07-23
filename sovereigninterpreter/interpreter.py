@@ -12,6 +12,7 @@ from .messages import MessageDict, assistant_code, computer_console, normalize_u
 from .respond import respond
 from .routing import LocalMessageRouter, Message
 from .safety import SafetyRules, looks_like_user_code
+from .errors import format_exception
 
 
 class SovereignInterpreter:
@@ -85,7 +86,9 @@ class SovereignInterpreter:
             try:
                 output = self.computer.run("python", content)
             except Exception as exc:  # noqa: BLE001 — surface in console message
-                output = f"Execution error: {exc}"
+                output = format_exception(
+                    exc, show_tracebacks=self.config.show_tracebacks
+                )
             console = computer_console(output)
             self.messages.append(console)
             if display:
@@ -122,15 +125,10 @@ class SovereignInterpreter:
         raise RuntimeError("No pending assistant code to run. Use %run after code is shown.")
 
     def _display_tail(self, turn_start: int = 0) -> None:
-        """Show only this turn's messages (not prior execution history)."""
-        from .util import paint, use_color
+        """Show only this turn's messages with REPL role labels."""
+        from .display import format_message_for_repl
 
         for msg in self.messages[turn_start:]:
-            role = msg.get("role", "?")
-            msg_type = msg.get("type", "message")
-            content = msg.get("content", "")
-            label = f"{role}/{msg_type}"
-            styled = paint(label, "94") if use_color() else label
-            if isinstance(content, dict):
-                content = str(content)
-            print(f"{styled}: {content}")
+            line = format_message_for_repl(msg)
+            if line is not None:
+                print(line)

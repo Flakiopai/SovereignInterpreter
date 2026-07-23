@@ -15,7 +15,11 @@ def test_python_runner(tmp_path, monkeypatch):
 def test_shell_runner(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "workspace").mkdir()
-    cfg = SovereignConfig(kill_switch=False, allowed_roots=["./workspace"])
+    cfg = SovereignConfig(
+        kill_switch=False,
+        sandbox_mode="full",
+        allowed_roots=["./workspace"],
+    )
     term = Terminal(config=cfg, cwd=tmp_path / "workspace")
     out = term.run("shell", "echo hello")
     assert "hello" in out
