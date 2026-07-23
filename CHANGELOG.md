@@ -5,6 +5,24 @@ All notable changes to SovereignInterpreter are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-07-23
+
+### Added
+- Sandbox modes: `safe` (no execution), `strict` (Python only, workspace root), `full` (Python + shell + configured roots)
+- `%sandbox [safe|strict|full]` REPL magic and banner `sandbox=` indicator
+- Unified error envelope (`SovereignError`) with categories: `PythonError`, `ShellError`, `ModelOutputError`, `SandboxBlocked`, `ExecutionDenied`
+- REPL display labels: `[model]`, `[confirm]`, `[run]`, `[console]`, `[skip]`, `[error]`, plus thinking and confirm/run previews
+- `sandbox_mode` and `show_tracebacks` configuration keys
+
+### Changed
+- Terminal runners route through `_run_python` / `_run_shell` with sandbox checks before execution
+- Filesystem policy uses `effective_roots()` so safe/strict jail to `./workspace`
+- `!command` is blocked when sandbox mode is not `full`
+
+### Notes
+- Universal safety rule, intent detection, model magics, and `%reset` behavior are unchanged from 0.2.0
+- 61 offline unit tests passing
+
 ## [0.2.0] — 2026-07-22
 
 ### Added

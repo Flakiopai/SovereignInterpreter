@@ -59,6 +59,7 @@ si.chat("Print hello from python")
 | **Allowed-roots sandbox** | `FilesystemMutator` may only touch configured directories |
 | **Confirmation gate** | `auto_run: false` by default — code requires approval |
 | **Turn / iteration ceiling** | `max_turns` / `max_iterations` bound execution loops |
+| **Sandbox modes** | `safe` / `strict` (default) / `full` gate Python, shell, and roots |
 | **Safety rules** | Local patterns block cloud API hosts, secret-like tokens, and destructive shells |
 | **Memory pack hooks** | `SovereignMemory.export_pack()` / `import_pack()` for portable local recall |
 
@@ -79,7 +80,20 @@ Execution happens only when you:
 
 Plain text (e.g. `hello`) is never treated as executable. If a weak model still emits fences, the code is shown and skipped unless you confirm or `%run`. User-authored code and model-authored code are handled differently on purpose.
 
-Related REPL helpers: `%model [name]`, `%models`, `!shell` (e.g. `!ls`).
+Related REPL helpers: `%model [name]`, `%models`, `%sandbox`, `!shell` (e.g. `!ls`).
+
+### Sandbox modes
+
+| Mode | Python | Shell / `!` | Filesystem roots |
+|------|--------|-------------|------------------|
+| `safe` | blocked | blocked | `./workspace` |
+| `strict` (default) | allowed | blocked | `./workspace` |
+| `full` | allowed | allowed | configured `allowed_roots` |
+
+### Error envelope
+
+Failures render as `[Category] message` (e.g. `[PythonError] …`, `[SandboxBlocked] …`).
+Optional detail/tracebacks only when `show_tracebacks: true`.
 
 ---
 
@@ -199,7 +213,9 @@ Use `--auto-run` only when you accept local execution risk.
 
 REPL helpers:
 - Magic: `%reset`, `%auto_run on|off`, `%model [name]`, `%models`
-- Shell shortcut: `!ls` runs a local shell command without calling the model
+- Magic: `%sandbox [safe|strict|full]`, `%run`
+- Shell shortcut: `!ls` runs a local shell command without calling the model (requires `sandbox_mode: full`)
+- Labels: `[model]` / `[confirm]` / `[run]` / `[console]` / `[skip]` / `[error]`
 
 ---
 
@@ -214,6 +230,8 @@ llm_base_url: http://127.0.0.1:11434/v1
 max_turns: 20
 max_iterations: 10
 auto_run: false
+sandbox_mode: strict
+show_tracebacks: false
 allowed_roots:
   - ./workspace
   - ./examples
@@ -270,6 +288,8 @@ SovereignInterpreter/
 │   ├── safety.py         # SafetyRules
 │   ├── filesystem.py     # FilesystemMutator sandbox
 │   ├── util.py           # NO_COLOR helpers
+│   ├── errors.py         # Error envelope + categories
+│   ├── display.py        # REPL labels / previews
 │   └── cli.py            # Keyboard-friendly REPL
 ├── examples/
 │   ├── basic/            # Live Ollama chat demo
