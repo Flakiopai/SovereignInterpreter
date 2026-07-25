@@ -1,6 +1,6 @@
 # SovereignInterpreter Handbook — Index
 
-Welcome. This handbook is the operator and engineer guide for **SovereignInterpreter** (main repo version **1.0.0**).
+Welcome. This handbook is the operator and engineer guide for **SovereignInterpreter** (main repo version **1.0.1**).
 
 It explains how the local-first interpreter thinks about sovereignty, routes chat vs code, gates execution, sandboxes runners, and labels failures — using only behavior that already exists in the main codebase.
 

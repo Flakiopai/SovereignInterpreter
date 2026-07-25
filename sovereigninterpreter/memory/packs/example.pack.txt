@@ -1,0 +1,8 @@
+# pack: example
+# version: 2
+
+## short
+session note: prefer workspace-relative paths
+
+## long
+Doctrine: local-first inference only; never dial cloud endpoints by default.

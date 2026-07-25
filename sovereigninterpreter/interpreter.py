@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Callable, List, Optional, Union
+from typing import Any, Callable, List, Optional, Union
 
+from .agent import AgentConfig
 from .computer import Computer
 from .config import SovereignConfig, load_config
 from .llm import LocalLLM, MockLocalLLM
-from .memory import MemoryPack, SovereignMemory
+from .memory import MemoryManager, MemoryPack, SovereignMemory
 from .messages import MessageDict, assistant_code, computer_console, normalize_user_message
 from .respond import respond
 from .routing import LocalMessageRouter, Message
@@ -41,10 +42,18 @@ class SovereignInterpreter:
         self.llm = llm or LocalLLM(config=self.config)
         self.computer = computer or Computer(config=self.config)
         self.memory = memory if memory is not None else (SovereignMemory() if use_memory else None)
+        self.memory_manager: Optional[MemoryManager] = None
+        if self.memory is not None:
+            self.memory_manager = MemoryManager(
+                config=self.config,
+                files=self.computer.files,
+                memory=self.memory,
+            )
         self.safety = safety or SafetyRules(enabled=self.config.safety_enabled)
         self.system_message = system_message
         self.messages: List[MessageDict] = []
         self.router = LocalMessageRouter()
+        self.agent_config = AgentConfig()
 
     @property
     def auto_run(self) -> bool:
@@ -53,6 +62,51 @@ class SovereignInterpreter:
     @auto_run.setter
     def auto_run(self, value: bool) -> None:
         self.config.auto_run = bool(value)
+
+    def set_agent_mode(self, enabled: bool) -> bool:
+        """
+        Enable or disable the agent-mode overlay on ``respond()``.
+
+        Does not start a second runtime. When enabled, subsequent ``chat()``
+        calls pass ``agent_config`` into ``respond()`` (tool fences, step
+        budget, continue-until-done, confirm gates).
+        """
+        self.config.assert_not_killed()
+        self.agent_config.enabled = bool(enabled)
+        return self.agent_config.enabled
+
+    @property
+    def agent_mode(self) -> bool:
+        return bool(self.agent_config.enabled)
+
+    def set_model(self, name: str, *, require_installed_ollama: bool = True) -> str:
+        """
+        Switch the active local model via ``ModelLoader``.
+
+        Validates ``name`` against ``models/registry.json``, reloads the
+        ``LocalLLM`` adapter (or updates ``MockLocalLLM.model``), and syncs
+        ``config.default_model`` / ``config.llm_base_url``. Respects kill-switch
+        and ``allow_cloud``. Does not change sandbox_mode or Computer.
+
+        Returns the effective API model id used by ``llm.complete()``.
+        """
+        from .models.loader import ModelLoader
+
+        self.config.assert_not_killed()
+        loader = ModelLoader(config=self.config)
+        entry = loader.switch(
+            self,
+            name,
+            require_installed_ollama=require_installed_ollama,
+        )
+        return entry.api_model
+
+    def list_models(self) -> list:
+        """Return local registry rows for display / API consumers."""
+        from .models.loader import ModelLoader
+
+        self.config.assert_not_killed()
+        return ModelLoader(config=self.config).list_for_display()
 
     def reset(self) -> None:
         self.messages = []
@@ -98,7 +152,7 @@ class SovereignInterpreter:
         return src.resolve()
 
     def export_memory(self, path: Union[str, Path] = "memory.json") -> Path:
-        """Write the current memory pack to a JSON file."""
+        """Write the current memory pack to a JSON file (v1-compatible)."""
         if self.memory is None:
             raise RuntimeError("Memory is disabled for this interpreter.")
         out = Path(path).expanduser()
@@ -112,7 +166,7 @@ class SovereignInterpreter:
         return out.resolve()
 
     def import_memory(self, path: Union[str, Path] = "memory.json") -> Path:
-        """Replace the current memory pack from a JSON file."""
+        """Replace the current memory pack from a JSON file (v1-compatible)."""
         if self.memory is None:
             raise RuntimeError("Memory is disabled for this interpreter.")
         src = Path(path).expanduser()
@@ -123,6 +177,47 @@ class SovereignInterpreter:
             raise ValueError(f"Expected a JSON object memory pack in {src}")
         self.memory.import_pack(MemoryPack.from_dict(data))
         return src.resolve()
+
+    def memory_list(self) -> list:
+        """List v2 pack names under ``workspace/packs/``."""
+        if self.memory_manager is None:
+            raise RuntimeError("Memory is disabled for this interpreter.")
+        return self.memory_manager.list_packs()
+
+    def memory_save(self, pack: str) -> str:
+        """Save current memory to a v2 portable pack in the workspace jail."""
+        if self.memory_manager is None:
+            raise RuntimeError("Memory is disabled for this interpreter.")
+        return self.memory_manager.save_pack(pack)
+
+    def memory_load(self, pack: str) -> str:
+        """Load a v2 pack from the jail into memory (and prompt injection)."""
+        if self.memory_manager is None:
+            raise RuntimeError("Memory is disabled for this interpreter.")
+        return self.memory_manager.load_pack(pack)
+
+    def workflow_list(self) -> list:
+        """List workflow playbooks under ``workspace/workflows/``."""
+        from .workflows import WorkflowRunner
+
+        self.config.assert_not_killed()
+        return WorkflowRunner(self).list_workflows()
+
+    def workflow_run(
+        self,
+        name: str,
+        *,
+        confirm: Optional[Callable[[str, str], bool]] = None,
+    ) -> Any:
+        """
+        Run a workspace-jailed workflow playbook.
+
+        Orchestrates existing ``computer.run`` / tools / agent→``respond()`` only.
+        """
+        from .workflows import WorkflowRunner
+
+        self.config.assert_not_killed()
+        return WorkflowRunner(self).run(name, confirm=confirm)
 
     def chat(
         self,
@@ -172,7 +267,8 @@ class SovereignInterpreter:
             memory=self.memory,
             system_message=self.system_message,
             confirm=confirm,
-            max_iterations=self.config.max_iterations,
+            max_iterations=None if self.agent_config.enabled else self.config.max_iterations,
+            agent_config=self.agent_config if self.agent_config.enabled else None,
         )
 
         if display:

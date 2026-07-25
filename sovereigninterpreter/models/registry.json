@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "description": "Local-only model catalog for SovereignInterpreter. Cloud providers are forbidden; every base_url must pass allow_cloud / assert_llm_allowed.",
+  "models": [
+    {
+      "id": "llama3.2",
+      "name": "Llama 3.2 (Ollama)",
+      "family": "ollama",
+      "backend": "ollama",
+      "model": "llama3.2",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "aliases": ["llama3.2:latest", "llama32"],
+      "description": "Default Ollama Llama 3.2 chat model."
+    },
+    {
+      "id": "llama3.1",
+      "name": "Llama 3.1 (Ollama)",
+      "family": "ollama",
+      "backend": "ollama",
+      "model": "llama3.1",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "aliases": ["llama3.1:latest", "llama31"],
+      "description": "Ollama Llama 3.1 variant."
+    },
+    {
+      "id": "llama3",
+      "name": "Llama 3 (Ollama)",
+      "family": "ollama",
+      "backend": "ollama",
+      "model": "llama3",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "aliases": ["llama3:latest"],
+      "description": "Ollama Llama 3."
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral (Ollama)",
+      "family": "ollama",
+      "backend": "ollama",
+      "model": "mistral",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "aliases": ["mistral:latest"],
+      "description": "Ollama Mistral."
+    },
+    {
+      "id": "phi3",
+      "name": "Phi-3 (Ollama)",
+      "family": "ollama",
+      "backend": "ollama",
+      "model": "phi3",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "aliases": ["phi3:latest", "phi3:mini"],
+      "description": "Ollama Phi-3."
+    },
+    {
+      "id": "qwen2.5",
+      "name": "Qwen 2.5 (Ollama)",
+      "family": "ollama",
+      "backend": "ollama",
+      "model": "qwen2.5",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "aliases": ["qwen2.5:latest"],
+      "description": "Ollama Qwen 2.5."
+    },
+    {
+      "id": "gemma2",
+      "name": "Gemma 2 (Ollama)",
+      "family": "ollama",
+      "backend": "ollama",
+      "model": "gemma2",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "aliases": ["gemma2:latest"],
+      "description": "Ollama Gemma 2."
+    },
+    {
+      "id": "codestral",
+      "name": "Codestral (Ollama)",
+      "family": "ollama",
+      "backend": "ollama",
+      "model": "codestral",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "aliases": ["codestral:latest"],
+      "description": "Ollama Codestral."
+    },
+    {
+      "id": "llama-3.2-3b-gguf",
+      "name": "Llama 3.2 3B GGUF (llama.cpp)",
+      "family": "gguf",
+      "backend": "llama_cpp",
+      "model": "llama-3.2-3b.Q4_K_M.gguf",
+      "base_url": "http://127.0.0.1:8080/v1",
+      "aliases": ["gguf-llama32", "llama32-gguf"],
+      "description": "Local GGUF served by an OpenAI-compatible llama.cpp HTTP server."
+    },
+    {
+      "id": "llama-3.1-8b-gguf",
+      "name": "Llama 3.1 8B GGUF (llama.cpp)",
+      "family": "gguf",
+      "backend": "llama_cpp",
+      "model": "llama-3.1-8b.Q4_K_M.gguf",
+      "base_url": "http://127.0.0.1:8080/v1",
+      "aliases": ["gguf-llama31", "llama31-gguf"],
+      "description": "Local Llama 3.1 8B GGUF via llama.cpp server."
+    },
+    {
+      "id": "mistral-7b-gguf",
+      "name": "Mistral 7B GGUF (llama.cpp)",
+      "family": "gguf",
+      "backend": "llama_cpp",
+      "model": "mistral-7b-instruct.Q4_K_M.gguf",
+      "base_url": "http://127.0.0.1:8080/v1",
+      "aliases": ["gguf-mistral"],
+      "description": "Local Mistral 7B GGUF via llama.cpp server."
+    },
+    {
+      "id": "llama-3.1-8b-local",
+      "name": "Llama 3.1 8B Instruct (local)",
+      "family": "llama",
+      "backend": "openai_compatible",
+      "model": "meta-llama-3.1-8b-instruct",
+      "base_url": "http://127.0.0.1:8080/v1",
+      "aliases": ["llama31-local", "llama-3.1-local"],
+      "description": "Local LLaMA 3.1 instruct variant behind an OpenAI-compatible local server."
+    },
+    {
+      "id": "llama-3.2-1b-local",
+      "name": "Llama 3.2 1B Instruct (local)",
+      "family": "llama",
+      "backend": "openai_compatible",
+      "model": "meta-llama-3.2-1b-instruct",
+      "base_url": "http://127.0.0.1:8080/v1",
+      "aliases": ["llama32-local", "llama-3.2-local"],
+      "description": "Local LLaMA 3.2 small instruct variant."
+    },
+    {
+      "id": "llama-3-8b-local",
+      "name": "Llama 3 8B Instruct (local)",
+      "family": "llama",
+      "backend": "openai_compatible",
+      "model": "meta-llama-3-8b-instruct",
+      "base_url": "http://127.0.0.1:8080/v1",
+      "aliases": ["llama3-local"],
+      "description": "Local LLaMA 3 instruct variant."
+    }
+  ]
+}

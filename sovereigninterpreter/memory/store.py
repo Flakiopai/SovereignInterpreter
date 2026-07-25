@@ -1,11 +1,14 @@
-"""Sovereign memory pack — local short-term / long-term recall."""
+"""In-process sovereign memory store (short / long recall)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
-from .embeddings import LocalEmbeddings
+from ..embeddings import LocalEmbeddings
+
+if TYPE_CHECKING:
+    from .manager import MemoryManager
 
 
 @dataclass
@@ -17,7 +20,7 @@ class MemoryItem:
 
 @dataclass
 class MemoryPack:
-    """Serializable memory snapshot for hooks / persistence."""
+    """Serializable memory snapshot for hooks / persistence (v1 JSON compatible)."""
 
     short_term: List[str] = field(default_factory=list)
     long_term: List[str] = field(default_factory=list)
@@ -41,6 +44,7 @@ class SovereignMemory:
       - remember(content, kind)
       - recall(query, k)
       - export_pack() / import_pack()
+      - pack_injection_block() when a MemoryManager is attached (v2)
     """
 
     def __init__(
@@ -55,6 +59,7 @@ class SovereignMemory:
         self._short: List[str] = []
         self._long: List[str] = []
         self._long_vectors: List[List[float]] = []
+        self.manager: Optional["MemoryManager"] = None
 
     def remember(self, content: str, kind: str = "short") -> None:
         text = (content or "").strip()
@@ -94,6 +99,12 @@ class SovereignMemory:
         for item in items:
             lines.append(f"- ({item.kind}) {item.content}")
         return "\n".join(lines)
+
+    def pack_injection_block(self) -> str:
+        """v2 loaded packs for system-prompt injection (empty if no manager)."""
+        if self.manager is None:
+            return ""
+        return self.manager.injection_block()
 
     def export_pack(self) -> MemoryPack:
         return MemoryPack(short_term=list(self._short), long_term=list(self._long))

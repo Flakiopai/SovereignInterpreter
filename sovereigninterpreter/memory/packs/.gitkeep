@@ -1,0 +1,2 @@
+# Pack templates / shipped examples (optional).
+# Runtime operator packs live under workspace/packs/ (jail), not here.

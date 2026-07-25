@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, List, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional
 
 from .computer import Computer
 from .config import SovereignConfig
@@ -30,8 +30,22 @@ from .messages import (
 from .safety import SafetyRules, user_requests_execution
 from .terminal import Terminal
 
+if TYPE_CHECKING:
+    from .agent.config import AgentConfig
+
 
 ConfirmFn = Callable[[str, str], bool]
+
+
+def _call_tool(computer: Computer, name: str, **kwargs) -> str:
+    """
+    respond()-side tool entry point.
+
+    Routes through ``Computer.call_tool`` → ToolRegistry → ToolSandbox →
+    ``Computer.files`` / ``Computer.run``. Does not open network sockets and
+    does not bypass kill-switch, allow_cloud URL jail, or sandbox_mode.
+    """
+    return computer.call_tool(name, **kwargs)
 
 
 def _finish_thinking(elapsed: float) -> None:
@@ -47,6 +61,11 @@ def _validate_code_block(language: str, code: str) -> Optional[SovereignError]:
     Plain text without fences never reaches here.
     """
     lang = (language or "").lower().strip()
+    if lang == "tool":
+        return ModelOutputError(
+            "Tool fences require agent mode (%agent on). "
+            "Supported languages otherwise: python, shell."
+        )
     if lang not in Terminal.SUPPORTED:
         supported = ", ".join(Terminal.SUPPORTED)
         return ModelOutputError(
@@ -110,6 +129,7 @@ def respond(
     system_message: Optional[str] = None,
     confirm: Optional[ConfirmFn] = None,
     max_iterations: Optional[int] = None,
+    agent_config: Optional["AgentConfig"] = None,
 ) -> List[MessageDict]:
     """
     Run the sovereign chat→code→console loop.
@@ -121,24 +141,67 @@ def respond(
     - Only the first fenced code block is considered.
     - Model fences never auto-run unless the user requested execution.
     - Malformed / failed code stops the loop (no hallucination retry).
+
+    Sandboxed tools (Step 3): ``computer.tool_dict()`` / ``computer.call_tool``
+    expose read_file, write_file, list_dir, run_python. Code fences still use
+    ``computer.run``; tool dispatch is available for callers inside this loop
+    via ``_call_tool`` without bypassing Computer or doctrine gates.
+
+    Memory v2 (Step 5): before each ``llm.complete``, recall context and any
+    loaded packs (``memory.pack_injection_block()``) are appended to the
+    system prompt. Pack I/O lives in ``MemoryManager`` under the workspace jail.
+
+    Agent mode (Step 6): optional overlay via ``agent_config`` — same loop with
+    step-capped iterations, tool fences, continue-until-done, and confirm gates
+    the model cannot self-authorize.
     """
+    from .agent.loop import (
+        agent_effective_auto_run,
+        effective_max_steps,
+        overlay_system_message,
+        parse_tool_fence,
+    )
+
     config.assert_not_killed()
-    iterations = max_iterations if max_iterations is not None else config.max_iterations
-    system = system_message or DEFAULT_SYSTEM_MESSAGE
+    agent_on = bool(agent_config is not None and agent_config.enabled)
+    if max_iterations is not None:
+        iterations = max_iterations
+    else:
+        iterations = effective_max_steps(
+            config_max_iterations=config.max_iterations,
+            agent_config=agent_config if agent_on else None,
+        )
+
+    base_system = system_message or DEFAULT_SYSTEM_MESSAGE
+    if agent_on and agent_config is not None:
+        base_system = overlay_system_message(base_system, agent_config)
+
     show_tb = bool(config.show_tracebacks)
 
     last_user = _last_user_text(messages)
-    execution_requested = user_requests_execution(last_user)
-
-    if memory is not None and last_user:
-        block = memory.context_block(str(last_user))
-        if block:
-            system = f"{system}\n\n{block}"
+    # Enabling agent mode is operator intent for collaborative actions;
+    # require_confirm still blocks silent auto-run.
+    execution_requested = user_requests_execution(last_user) or agent_on
+    effective_auto_run = agent_effective_auto_run(
+        config_auto_run=config.auto_run,
+        agent_config=agent_config if agent_on else None,
+    )
 
     produced: List[MessageDict] = []
 
     for _ in range(max(1, iterations)):
         config.assert_not_killed()
+
+        # Build system prompt for this LLM call (recall + v2 pack injection).
+        system = base_system
+        if memory is not None:
+            if last_user:
+                block = memory.context_block(str(last_user))
+                if block:
+                    system = f"{system}\n\n{block}"
+            pack_block = memory.pack_injection_block()
+            if pack_block:
+                system = f"{system}\n\n{pack_block}"
 
         # Safety-check recent user/assistant content before inference.
         texts: List[str] = []
@@ -175,7 +238,8 @@ def respond(
 
         blocks = extract_code_blocks(reply)
         if not blocks:
-            # Plain text: display only — never execute.
+            # Plain text: display only — never execute. Ends the turn
+            # (agent: final answer / [done]).
             msg = assistant_message(reply)
             produced.append(msg)
             messages.append(msg)
@@ -199,7 +263,7 @@ def respond(
         messages.append(code_msg)
 
         # Display first; decide execution via the universal safety rule.
-        needs_confirm_record = not (execution_requested and config.auto_run)
+        needs_confirm_record = not (execution_requested and effective_auto_run)
         if needs_confirm_record and confirm is not None:
             confirm_msg = confirmation_message(language, code)
             produced.append(confirm_msg)
@@ -207,7 +271,7 @@ def respond(
 
         should_run, _asked = _should_execute(
             execution_requested=execution_requested,
-            auto_run=config.auto_run,
+            auto_run=effective_auto_run,
             confirm=confirm,
             language=language,
             code=code,
@@ -231,14 +295,23 @@ def respond(
             # Do not continue the LLM loop after an unsolicited fence.
             break
 
-        validation_error = _validate_code_block(language, code)
+        lang = (language or "").lower().strip()
+        if lang == "tool":
+            if not agent_on:
+                validation_error: Optional[SovereignError] = ModelOutputError(
+                    "Tool fences require agent mode (%agent on)."
+                )
+            else:
+                validation_error = None
+        else:
+            validation_error = _validate_code_block(language, code)
+
         if validation_error is not None:
             err = _console_error(validation_error, show_tracebacks=show_tb)
             produced.append(err)
             messages.append(err)
             break
 
-        lang = (language or "").lower().strip()
         if lang == "python" and not config.allows_python():
             blocked = SandboxBlocked(
                 f"Execution skipped (python): sandbox_mode={config.sandbox_mode} blocks execution."
@@ -257,7 +330,11 @@ def respond(
             break
 
         try:
-            output = computer.run(language, code)
+            if lang == "tool":
+                tool_name, tool_kwargs = parse_tool_fence(code)
+                output = _call_tool(computer, tool_name, **tool_kwargs)
+            else:
+                output = computer.run(language, code)
         except SovereignError as exc:
             err = _console_error(exc, show_tracebacks=show_tb)
             produced.append(err)
@@ -277,9 +354,15 @@ def respond(
             memory.remember(f"Ran {language}: {code[:200]}", kind="short")
             memory.remember(f"Output: {output[:200]}", kind="short")
 
-        # After a successful explicit run, allow one follow-up reply at most
-        # only when the user requested execution; otherwise stop.
-        if _looks_like_failure(output) or not execution_requested:
+        if _looks_like_failure(output):
+            break
+
+        if agent_on:
+            # Continue until plain-text [done] / max_steps / failure.
+            continue
+
+        # Non-agent: stop unless the user requested execution (follow-up).
+        if not execution_requested:
             break
 
     return produced
@@ -298,6 +381,8 @@ def _looks_like_failure(output: str) -> bool:
         "[ModelOutputError]",
         "[SandboxBlocked]",
         "[ExecutionDenied]",
+        "[ToolSandbox]",
+        "[MemoryError]",
     )
     return any(marker in text for marker in markers)
 

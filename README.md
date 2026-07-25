@@ -14,10 +14,20 @@ Familiar chat → code → console ergonomics from an upstream interpreter frame
 
 ## What’s New
 
-**v1.0.0 — visual identity (presentation-only).** Neon block SI header, `[S|I]` micro-mark on the prompt / logs / debug (not beside the big mark), color-coded execution labels, and a plain `NO_COLOR` fallback.
+**v1.0.1 — operator subsystems (Steps 3–7).** Additive packages on the same chat→respond→computer pipeline. Doctrine gates unchanged; no cloud SDKs or telemetry.
+
+| Subsystem | What it adds |
+|-----------|----------------|
+| **Sandboxed tools** | `Computer.call_tool` / `%`-ready registry: `read_file`, `write_file`, `list_dir`, `run_python` — always via Computer + jail |
+| **Multi-model loader** | Local `models/registry.json` + `ModelLoader`; `%model` / `%models` reload `LocalLLM` (Ollama / GGUF / local LLaMA) |
+| **Memory Pack v2** | Portable `# pack:` / `# version: 2` text under `workspace/packs/`; `%memory list\|load\|save`; inject before each LLM call |
+| **Agent mode overlay** | `%agent on\|off` / `set_agent_mode` — same `respond()` loop with step budget, tool fences, confirm gates (not a second runtime) |
+| **Workflow runner** | `workspace/workflows/<name>.yaml`; `%workflow list\|run` orchestrates `computer.run` / tools / agent→`chat` only |
+| **Doctrine enforcement** | Kill-switch, `allow_cloud`, sandbox modes, intent/confirm — still fail-closed on every path |
+| **Workspace jail** | Safe/strict roots stay under `./workspace`; tools, packs, and workflows resolve through `FilesystemMutator` |
 
 ```text
-[S|I] SovereignInterpreter v1.0.0
+[S|I] SovereignInterpreter v1.0.1
 
 ┌────────────────────────────────────────┐
 │ Ready                                  │
@@ -30,6 +40,8 @@ Familiar chat → code → console ergonomics from an upstream interpreter frame
 └────────────────────────────────────────┘
 [S|I] >>
 ```
+
+**v1.0.0 — visual identity (presentation-only).** Neon block SI header, `[S|I]` micro-mark on the prompt / logs / debug, color-coded execution labels, and a plain `NO_COLOR` fallback.
 
 Set `NO_COLOR=1` for the text-only header above; with color enabled you get the neon ASCII SI block instead.
 
@@ -86,7 +98,7 @@ si.chat("Print hello from python")
 | **Iteration ceiling** | `max_iterations` bounds the chat→code→console loop |
 | **Sandbox modes** | `safe` / `strict` (default) / `full` gate Python, shell, and roots |
 | **Safety rules** | Local patterns block cloud API hosts, secret-like tokens, and destructive shells |
-| **Memory pack hooks** | `SovereignMemory.export_pack()` / `import_pack()` for portable local recall |
+| **Memory pack hooks** | v2 packs under `workspace/packs/` plus `export_pack()` / `import_pack()` JSON |
 
 These are enforced in code — not documented as suggestions.
 
@@ -105,7 +117,7 @@ Execution happens only when you:
 
 Plain text (e.g. `hello`) is never treated as executable. If a weak model still emits fences, the code is shown and skipped unless you confirm or `%run`. User-authored code and model-authored code are handled differently on purpose.
 
-Related REPL helpers: `%help`, `%status`, `%undo`, `%memory export|import`, `%model [name]`, `%models`, `%sandbox`, `!shell` (e.g. `!ls`).
+Related REPL helpers: `%help`, `%status`, `%undo`, `%memory list|load|save|export|import`, `%model` / `%models`, `%agent on|off`, `%workflow list|run`, `%sandbox`, `!shell` (e.g. `!ls`).
 
 ### Sandbox modes
 
@@ -134,9 +146,11 @@ flowchart TB
     INT["interpreter.py — SovereignInterpreter"]
     RSP["respond.py — execution loop"]
     CFG["config.py — SovereignConfig"]
-    LLM["llm.py — LocalLLM"]
-    CMP["computer.py / terminal.py"]
-    MEM["memory.py — SovereignMemory"]
+    LLM["llm.py + models/ — LocalLLM / loader"]
+    CMP["computer.py / terminal.py / tools/"]
+    MEM["memory/ — SovereignMemory + v2 packs"]
+    AGT["agent/ — overlay on respond()"]
+    WFL["workflows/ — YAML playbook runner"]
     SAFE["safety.py — SafetyRules"]
     RTE["routing.py — LocalMessageRouter"]
     FS["filesystem.py — FilesystemMutator"]
@@ -144,25 +158,31 @@ flowchart TB
 
   subgraph Local["Your machine"]
     OLLAMA["Ollama / local HTTP chat server"]
-    DISK["allowed_roots<br/>./workspace · ./examples"]
+    DISK["allowed_roots / workspace jail<br/>packs · workflows · code"]
     KILL[".kill_switch"]
   end
 
   API --> INT
   INT --> RSP
+  INT --> AGT
+  INT --> WFL
   RSP --> CFG
   RSP --> LLM
   RSP --> CMP
   RSP --> MEM
   RSP --> SAFE
+  WFL --> CMP
+  WFL --> AGT
   INT --> RTE
   FS --> CFG
   LLM --> OLLAMA
   CMP --> DISK
+  MEM --> DISK
+  WFL --> DISK
   CFG --> KILL
 ```
 
-**Text description:** Your application or CLI calls `chat` or the REPL. The interpreter uses config, local LLM, computer/terminal, memory, and safety modules. The LLM client talks to a local model server; filesystem and code runs stay under policy; the kill-switch file can halt activity.
+**Text description:** Your application or CLI calls `chat` or the REPL. The interpreter uses config, local LLM (optional model loader), computer/terminal/tools, memory packs, optional agent overlay, and workflow playbooks — all through the same doctrine gates. The LLM client talks to a local model server; filesystem and code runs stay under the workspace jail; the kill-switch file can halt activity.
 
 ---
 

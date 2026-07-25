@@ -7,6 +7,7 @@ It is not affiliated with, endorsed by, or sponsored by any organization.
 All cloud dependencies have been removed.
 """
 
+from .agent import AgentConfig
 from .computer import Computer
 from .config import (
     CloudForbiddenError,
@@ -16,11 +17,12 @@ from .config import (
 )
 from .filesystem import FilesystemError, FilesystemMutator
 from .interpreter import SovereignInterpreter
-from .memory import MemoryPack, SovereignMemory
+from .memory import MemoryManager, MemoryPack, SovereignMemory
 from .routing import LocalMessageRouter, Message
 from .safety import SafetyRules, SafetyViolation
+from .workflows import Workflow, WorkflowError, WorkflowRunner, WorkflowRunResult
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 __all__ = [
     "SovereignInterpreter",
@@ -31,8 +33,14 @@ __all__ = [
     "Computer",
     "FilesystemMutator",
     "FilesystemError",
+    "AgentConfig",
+    "MemoryManager",
     "MemoryPack",
     "SovereignMemory",
+    "Workflow",
+    "WorkflowError",
+    "WorkflowRunner",
+    "WorkflowRunResult",
     "SafetyRules",
     "SafetyViolation",
     "LocalMessageRouter",

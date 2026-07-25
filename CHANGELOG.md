@@ -5,6 +5,26 @@ All notable changes to SovereignInterpreter are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-07-25 — Operator subsystems
+
+Patch release: additive local-first subsystems on the unchanged chat→respond→computer core. No cloud SDKs, no telemetry, no second agent runtime.
+
+### Added
+- **Sandboxed tools** (`tools/`): registry + path jail; `Computer.call_tool` for `read_file` / `write_file` / `list_dir` / `run_python`
+- **Multi-model loader** (`models/`): local `registry.json` (Ollama, GGUF, local LLaMA); `%model` / `%models` reload `LocalLLM`
+- **Memory Pack v2** (`memory/`): `# pack:` / `# version: 2` text under `workspace/packs/`; `%memory list|load|save`; system-prompt injection each LLM call
+- **Agent mode overlay** (`agent/`): `%agent on|off` / `set_agent_mode`; same `respond()` with `max_steps` + `require_confirm`
+- **Workflow runner** (`workflows/`): `workspace/workflows/<name>.yaml`; `%workflow list|run` orchestrates run / tool / agent paths only
+- Offline tests for tools, models, memory v2, agent, workflows (suite **119** passing)
+
+### Changed
+- README architecture diagram and What’s New for v1.0.1 subsystems
+- Packaging: `__version__` / `setup.cfg` / `sovereigninterpreter version` → **1.0.1**
+
+### Notes
+- Doctrine unchanged: kill-switch, `allow_cloud: false`, sandbox modes, universal fence rule, workspace jail
+- Agent mode overlays `respond()`; workflows do not introduce new executors
+
 ## [1.0.0] — 2026-07-23 — Sovereign Edition
 
 First stable **Sovereign Edition** release. Local-first chat→code→console with doctrine enforced in code.

@@ -4,7 +4,7 @@ Documentation-only guide for **SovereignInterpreter** â€” the local-first chat â
 
 This handbook describes **existing behavior** in the main [SovereignInterpreter](https://github.com/Flakiopai/SovereignInterpreter) repository. It does not define new features, ship interpreter code, or change runtime policy.
 
-**Version covered:** 1.0.0
+**Version covered:** 1.0.1
 
 Each chapter includes three explanation layers:
 

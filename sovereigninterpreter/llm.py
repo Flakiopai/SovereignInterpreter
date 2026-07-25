@@ -257,7 +257,12 @@ class Chat:
 
 
 class LocalLLM:
-    """Minimal Ollama-native chat client (`client.chat.completions.create`)."""
+    """Minimal local OpenAI-compatible chat client (`client.chat.completions.create`).
+
+    Default discovery remains Ollama-oriented. ``ModelLoader`` (Step 4) can
+    reload this adapter onto other local backends (GGUF / llama.cpp / local
+    LLaMA) without changing ``complete()`` — so ``respond()`` stays unchanged.
+    """
 
     def __init__(
         self,
@@ -287,9 +292,46 @@ class LocalLLM:
         self.model = resolved_model
         self.timeout = timeout
         self.chat = Chat(self)
+        # Optional registry metadata (set by ModelLoader).
+        self.backend: str = "ollama"
+        self.registry_id: Optional[str] = None
+        self.family: Optional[str] = None
+        self._config = cfg
 
         if enforce_config and cfg is not None:
             cfg.assert_llm_allowed(self.base_url)
+
+    def apply_registry_entry(self, entry: Any) -> None:
+        """Attach catalog metadata from a ``ModelEntry`` (no network)."""
+        self.backend = str(getattr(entry, "backend", None) or self.backend)
+        self.registry_id = str(getattr(entry, "id", None) or "") or None
+        self.family = str(getattr(entry, "family", None) or "") or None
+
+    def reload(
+        self,
+        *,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        config: Optional["SovereignConfig"] = None,
+        entry: Any = None,
+    ) -> None:
+        """
+        Reload adapter endpoints in place (local backends only).
+
+        Used by ``ModelLoader`` when ``%model`` switches catalog entries.
+        Does not introduce streaming or cloud SDKs.
+        """
+        cfg = config if config is not None else self._config
+        next_base = (base_url if base_url is not None else self.base_url).rstrip("/")
+        next_model = model if model is not None else self.model
+        if cfg is not None:
+            cfg.assert_not_killed()
+            cfg.assert_llm_allowed(next_base)
+            self._config = cfg
+        self.base_url = next_base
+        self.model = next_model
+        if entry is not None:
+            self.apply_registry_entry(entry)
 
     def _url(self, path: str) -> str:
         if not path.startswith("/"):

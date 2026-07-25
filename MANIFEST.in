@@ -2,5 +2,7 @@ include README.md
 include LICENSE
 include SECURITY.md
 include sovereign.yaml
+include sovereigninterpreter/models/registry.json
+recursive-include sovereigninterpreter/memory/packs *
 recursive-include examples *
 recursive-include workspace .gitkeep

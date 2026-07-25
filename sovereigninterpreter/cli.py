@@ -23,13 +23,15 @@ from .display import (
 )
 from .errors import format_exception
 from .interpreter import SovereignInterpreter
-from .llm import list_installed_models, resolve_installed_model
+from .models.loader import ModelLoaderError
 from .util import paint, use_color
 
 
 _MAGIC_HELP = (
     "%help, %status, %info, %reset, %undo, %save [path], %load [path], "
-    "%memory export|import [path], %auto_run on|off, %model [name], %models, "
+    "%memory list|load <pack>|save <pack>|export|import [path], "
+    "%workflow list|run <name>, "
+    "%auto_run on|off, %agent on|off, %model [name], %models, "
     "%run, %sandbox [safe|strict|full]"
 )
 
@@ -153,7 +155,7 @@ def _print_help(interpreter: SovereignInterpreter) -> None:
                 "system",
                 f"Memory packs: on  short={len(pack.short_term)}  "
                 f"long={len(pack.long_term)}  "
-                "API: SovereignMemory.export_pack() / import_pack()",
+                "API: memory_list/save/load + export_pack/import_pack",
             )
         )
 
@@ -165,6 +167,14 @@ def _print_status(interpreter: SovereignInterpreter) -> None:
     kill = "engaged" if cfg.kill_switch_engaged() else "clear"
     print(format_log(f"sandbox={cfg.sandbox_mode}"))
     print(format_log(f"auto_run={'on' if cfg.auto_run else 'off'}"))
+    print(
+        format_log(
+            f"agent={'on' if interpreter.agent_mode else 'off'}  "
+            f"max_steps={interpreter.agent_config.max_steps}  "
+            f"require_confirm="
+            f"{'on' if interpreter.agent_config.require_confirm else 'off'}"
+        )
+    )
     print(format_log(f"model={interpreter.llm.model}"))
     print(format_log(f"endpoint={cfg.llm_base_url}"))
     print(format_log(f"allowed_roots={roots}"))
@@ -292,10 +302,55 @@ def _handle_magic(line: str, interpreter: SovereignInterpreter) -> None:
         return
 
     if cmd == "memory":
-        if not args or args[0].lower() not in {"export", "import"}:
-            print(labeled("system", "Usage: %memory export|import [path]"))
+        if not args:
+            print(
+                labeled(
+                    "system",
+                    "Usage: %memory list|load <pack>|save <pack>|export|import [path]",
+                )
+            )
             return
         action = args[0].lower()
+        if action == "list":
+            try:
+                packs = interpreter.memory_list()
+            except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+                _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
+                return
+            if not packs:
+                print(labeled("system", "No memory packs in workspace/packs/"))
+                return
+            print(labeled("system", "Memory packs (v2):"))
+            loaded = set()
+            if interpreter.memory_manager is not None:
+                loaded = set(interpreter.memory_manager.loaded_names)
+            for name in packs:
+                marker = " *" if name in loaded else ""
+                print(labeled("system", f"{name}{marker}"))
+            return
+        if action in {"load", "save"}:
+            pack_name = " ".join(args[1:]).strip()
+            if not pack_name:
+                print(labeled("system", f"Usage: %memory {action} <pack>"))
+                return
+            try:
+                if action == "save":
+                    rel = interpreter.memory_save(pack_name)
+                    print(labeled("system", f"Memory pack saved → {rel}"))
+                else:
+                    name = interpreter.memory_load(pack_name)
+                    print(labeled("system", f"Memory pack loaded ← {name}"))
+            except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+                _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
+            return
+        if action not in {"export", "import"}:
+            print(
+                labeled(
+                    "system",
+                    "Usage: %memory list|load <pack>|save <pack>|export|import [path]",
+                )
+            )
+            return
         path = " ".join(args[1:]).strip() or "memory.json"
         try:
             if action == "export":
@@ -329,45 +384,125 @@ def _handle_magic(line: str, interpreter: SovereignInterpreter) -> None:
         print(labeled("system", f"auto_run={'on' if interpreter.auto_run else 'off'}"))
         return
 
-    if cmd == "models":
-        models = list_installed_models()
-        if not models:
-            print(labeled("system", "No local models found. Is Ollama running?"))
+    if cmd == "agent":
+        if not args or args[0].lower() not in {"on", "off"}:
+            state = "on" if interpreter.agent_mode else "off"
+            cfg = interpreter.agent_config
+            print(
+                labeled(
+                    "system",
+                    f"agent is {state}  max_steps={cfg.max_steps}  "
+                    f"require_confirm={'on' if cfg.require_confirm else 'off'}. "
+                    "Usage: %agent on|off",
+                )
+            )
             return
-        print(labeled("system", "Installed models:"))
-        for name in models:
-            marker = " *" if name == interpreter.llm.model else ""
-            print(labeled("system", f"{name}{marker}"))
+        enabled = args[0].lower() == "on"
+        try:
+            interpreter.set_agent_mode(enabled)
+        except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+            _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
+            return
+        print(labeled("system", f"agent={'on' if enabled else 'off'}"))
+        return
+
+    if cmd == "workflow":
+        if not args:
+            print(labeled("system", "Usage: %workflow list|run <name>"))
+            return
+        action = args[0].lower()
+        if action == "list":
+            try:
+                names = interpreter.workflow_list()
+            except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+                _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
+                return
+            if not names:
+                print(labeled("system", "No workflows in workspace/workflows/"))
+                return
+            print(labeled("system", "Workflows:"))
+            for name in names:
+                print(labeled("system", name))
+            return
+        if action == "run":
+            wf_name = " ".join(args[1:]).strip()
+            if not wf_name:
+                print(labeled("system", "Usage: %workflow run <name>"))
+                return
+            try:
+                result = interpreter.workflow_run(wf_name, confirm=_confirm)
+            except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+                _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
+                return
+            for step in result.steps:
+                status = "ok" if step.ok else "fail"
+                print(
+                    labeled(
+                        "system",
+                        f"workflow[{step.index}] {step.kind}={status}",
+                    )
+                )
+                if step.output:
+                    # Reuse console formatting for step output.
+                    from .display import format_console
+
+                    print(format_console(step.output))
+            print(
+                labeled(
+                    "system",
+                    f"workflow={result.name}  "
+                    f"{'ok' if result.ok else 'stopped'}",
+                )
+            )
+            return
+        print(labeled("system", "Usage: %workflow list|run <name>"))
+        return
+
+    if cmd == "models":
+        try:
+            rows = interpreter.list_models()
+        except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+            _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
+            return
+        if not rows:
+            print(labeled("system", "No models in local registry."))
+            return
+        print(labeled("system", "Local model registry:"))
+        active = getattr(interpreter.llm, "model", None)
+        active_id = getattr(interpreter.llm, "registry_id", None)
+        for row in rows:
+            is_active = row["model"] == active or row["id"] == active_id
+            marker = " *" if is_active else ""
+            print(
+                labeled(
+                    "system",
+                    f"{row['id']}  [{row['family']}/{row['backend']}]  "
+                    f"{row['status']}{marker}",
+                )
+            )
         return
 
     if cmd == "model":
         if not args:
-            print(labeled("system", f"Active model: {interpreter.llm.model}"))
+            active = interpreter.llm.model
+            backend = getattr(interpreter.llm, "backend", "ollama")
+            reg = getattr(interpreter.llm, "registry_id", None)
+            extra = f"  backend={backend}"
+            if reg:
+                extra += f"  registry_id={reg}"
+            print(labeled("system", f"Active model: {active}{extra}"))
             return
         requested = " ".join(args).strip()
-        installed = list_installed_models()
-        resolved = resolve_installed_model(requested, installed)
-        if resolved is None:
-            if not installed:
-                print(
-                    labeled(
-                        "system",
-                        f"Unknown model '{requested}'. "
-                        "No local models found (is Ollama running?).",
-                    )
-                )
-            else:
-                available = ", ".join(installed)
-                print(
-                    labeled(
-                        "system",
-                        f"Unknown model '{requested}'. Available: {available}",
-                    )
-                )
+        try:
+            resolved = interpreter.set_model(requested)
+        except ModelLoaderError as exc:
+            print(labeled("system", str(exc)))
             return
-        interpreter.llm.model = resolved
-        interpreter.config.default_model = resolved
-        print(labeled("system", f"Active model: {resolved}"))
+        except Exception as exc:  # noqa: BLE001 — surface to CLI cleanly
+            _print_error(exc, show_tracebacks=interpreter.config.show_tracebacks)
+            return
+        backend = getattr(interpreter.llm, "backend", "ollama")
+        print(labeled("system", f"Active model: {resolved}  backend={backend}"))
         return
 
     if cmd == "run":

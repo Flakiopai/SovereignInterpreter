@@ -9,7 +9,7 @@ pip install -e ".[dev]"
 sovereigninterpreter version
 ```
 
-Expect: `1.0.0`
+Expect: `1.0.1`
 
 ## 2. Ollama up
 

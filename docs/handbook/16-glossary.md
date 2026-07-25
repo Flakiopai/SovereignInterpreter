@@ -2,7 +2,7 @@
 
 ## Senior engineer
 
-Quick definitions aligned with the main SovereignInterpreter codebase (1.0.0).
+Quick definitions aligned with the main SovereignInterpreter codebase (1.0.1).
 
 | Term | Meaning |
 |------|---------|

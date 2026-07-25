@@ -16,7 +16,7 @@ from sovereigninterpreter.llm import MockLocalLLM
 def test_banner_shows_ready_and_system_tip(monkeypatch, capsys):
     monkeypatch.setenv("NO_COLOR", "1")
     _banner(
-        version="1.0.0",
+        version="1.0.1",
         model="llama3.2",
         endpoint="http://127.0.0.1:11434/v1",
         sandbox_mode="strict",
@@ -26,7 +26,7 @@ def test_banner_shows_ready_and_system_tip(monkeypatch, capsys):
     )
     out = capsys.readouterr().out
     # NO_COLOR: micro-mark fallback identity (no block header).
-    assert "[S|I] SovereignInterpreter v1.0.0" in out
+    assert "[S|I] SovereignInterpreter v1.0.1" in out
     assert "██████╗" not in out
     assert "Ready" in out
     assert "sandbox=strict" in out
@@ -40,7 +40,7 @@ def test_banner_color_block_has_no_micro_mark(monkeypatch, capsys):
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setenv("FORCE_COLOR", "1")
     _banner(
-        version="1.0.0",
+        version="1.0.1",
         model="llama3.2",
         endpoint="http://127.0.0.1:11434/v1",
         sandbox_mode="strict",
@@ -50,7 +50,7 @@ def test_banner_color_block_has_no_micro_mark(monkeypatch, capsys):
     )
     out = capsys.readouterr().out
     assert "██████╗ ██╗" in out
-    assert "SovereignInterpreter v1.0.0" in out
+    assert "SovereignInterpreter v1.0.1" in out
     # Micro-mark must not sit beside the block header.
     assert "[S|I] SovereignInterpreter" not in out
     assert "██████╗ ██╗  [S|I]" not in out
