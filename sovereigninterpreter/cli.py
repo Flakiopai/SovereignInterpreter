@@ -9,11 +9,22 @@ import argparse
 import sys
 
 from .config import load_config
-from .display import format_confirm_box, format_console, format_error, labeled
+from .display import (
+    GLYPH_MICRO,
+    NEON,
+    PROMPT_PREFIX,
+    format_confirm_box,
+    format_console,
+    format_error,
+    format_identity_rows,
+    format_log,
+    labeled,
+    visible_len,
+)
 from .errors import format_exception
 from .interpreter import SovereignInterpreter
 from .llm import list_installed_models, resolve_installed_model
-from .util import paint
+from .util import paint, use_color
 
 
 _MAGIC_HELP = (
@@ -22,14 +33,14 @@ _MAGIC_HELP = (
     "%run, %sandbox [safe|strict|full]"
 )
 
-# Compact monochrome wordmark (dimmed at print time).
+# Block SI sigil — vertical I only (no top/bottom bars; never reads as ST).
 _WORDMARK = "\n".join(
     (
-        " ____ ___",
-        "/ ___|_ _|",
-        "\\___ \\| |",
-        " ___) | |",
-        "|____/|_|",
+        "██████╗ ██╗",
+        "██╔═══╝ ██║",
+        "██████╗ ██║",
+        "╚═══██║ ██║",
+        "██████╝ ██║",
     )
 )
 
@@ -42,6 +53,11 @@ def _dim(text: str) -> str:
     return paint(text, "90")
 
 
+def _neon(text: str) -> str:
+    """Neon yellow accent; no-ops when NO_COLOR is set (via paint)."""
+    return paint(text, NEON)
+
+
 def _banner(
     *,
     version: str,
@@ -49,23 +65,33 @@ def _banner(
     endpoint: str,
     sandbox_mode: str,
     auto_run: bool,
+    kill_switch: bool = True,
+    allow_cloud: bool = False,
 ) -> None:
-    """Startup chrome — dim wordmark + boxed Ready; respects NO_COLOR."""
-    for line in _WORDMARK.splitlines():
-        print(_dim(line))
-    print(_dim(f" SovereignInterpreter v{version}"))
+    """Startup chrome — neon SI block + identity Ready box; respects NO_COLOR."""
+    if use_color():
+        # Full block sigil — no micro-mark beside it (looks redundant).
+        for line in _WORDMARK.splitlines():
+            print(_neon(line))
+        print(_dim(f" SovereignInterpreter v{version}"))
+    else:
+        # NO_COLOR / minimal fallback identity (text-only).
+        print(f"{GLYPH_MICRO} SovereignInterpreter v{version}")
     print()
 
-    auto = "on" if auto_run else "off"
-    rows = (
-        f" Ready  model={model}",
-        f" endpoint={endpoint}",
-        f" sandbox={sandbox_mode}  auto_run={auto}",
+    rows = format_identity_rows(
+        model=model,
+        sandbox_mode=sandbox_mode,
+        kill_switch=kill_switch,
+        allow_cloud=allow_cloud,
+        endpoint=endpoint,
+        auto_run=auto_run,
     )
-    width = max(len(row) for row in rows) + 1
+    width = max(visible_len(row) for row in rows) + 1
     print(_dim("┌" + "─" * width + "┐"))
     for row in rows:
-        print(_dim("│" + row.ljust(width) + "│"))
+        pad = width - visible_len(row)
+        print(_dim("│") + row + (" " * pad) + _dim("│"))
     print(_dim("└" + "─" * width + "┘"))
 
     print(
@@ -137,27 +163,25 @@ def _print_status(interpreter: SovereignInterpreter) -> None:
     cfg = interpreter.config
     roots = ", ".join(cfg.effective_roots())
     kill = "engaged" if cfg.kill_switch_engaged() else "clear"
-    print(labeled("system", f"sandbox={cfg.sandbox_mode}"))
-    print(labeled("system", f"auto_run={'on' if cfg.auto_run else 'off'}"))
-    print(labeled("system", f"model={interpreter.llm.model}"))
-    print(labeled("system", f"endpoint={cfg.llm_base_url}"))
-    print(labeled("system", f"allowed_roots={roots}"))
+    print(format_log(f"sandbox={cfg.sandbox_mode}"))
+    print(format_log(f"auto_run={'on' if cfg.auto_run else 'off'}"))
+    print(format_log(f"model={interpreter.llm.model}"))
+    print(format_log(f"endpoint={cfg.llm_base_url}"))
+    print(format_log(f"allowed_roots={roots}"))
     print(
-        labeled(
-            "system",
+        format_log(
             f"kill_switch={kill}  path={cfg.kill_switch_path}  "
-            f"enabled={cfg.kill_switch}",
+            f"enabled={cfg.kill_switch}"
         )
     )
     mem = interpreter.memory
     if mem is None:
-        print(labeled("system", "memory=off"))
+        print(format_log("memory=off"))
     else:
         pack = mem.export_pack()
         print(
-            labeled(
-                "system",
-                f"memory=on  short={len(pack.short_term)}  long={len(pack.long_term)}",
+            format_log(
+                f"memory=on  short={len(pack.short_term)}  long={len(pack.long_term)}"
             )
         )
 
@@ -170,35 +194,32 @@ def _print_info(interpreter: SovereignInterpreter) -> None:
     from . import __version__
 
     cfg = interpreter.config
-    print(labeled("system", f"sovereigninterpreter={__version__}"))
-    print(labeled("system", f"python={sys.version.split()[0]}  impl={platform.python_implementation()}"))
-    print(labeled("system", f"platform={platform.platform()}"))
-    print(labeled("system", f"cwd={Path.cwd()}"))
-    print(labeled("system", f"model={interpreter.llm.model}  endpoint={cfg.llm_base_url}"))
+    print(format_log(f"sovereigninterpreter={__version__}"))
+    print(format_log(f"python={sys.version.split()[0]}  impl={platform.python_implementation()}"))
+    print(format_log(f"platform={platform.platform()}"))
+    print(format_log(f"cwd={Path.cwd()}"))
+    print(format_log(f"model={interpreter.llm.model}  endpoint={cfg.llm_base_url}"))
     print(
-        labeled(
-            "system",
+        format_log(
             f"sandbox={cfg.sandbox_mode}  auto_run={'on' if cfg.auto_run else 'off'}  "
-            f"allow_cloud={cfg.allow_cloud}",
+            f"allow_cloud={cfg.allow_cloud}"
         )
     )
     print(
-        labeled(
-            "system",
+        format_log(
             f"kill_switch_path={cfg.kill_switch_path}  "
-            f"engaged={cfg.kill_switch_engaged()}",
+            f"engaged={cfg.kill_switch_engaged()}"
         )
     )
-    print(labeled("system", f"messages={len(interpreter.messages)}"))
+    print(format_log(f"messages={len(interpreter.messages)}"))
     mem = interpreter.memory
     if mem is None:
-        print(labeled("system", "memory=off"))
+        print(format_log("memory=off"))
     else:
         pack = mem.export_pack()
         print(
-            labeled(
-                "system",
-                f"memory=on  short={len(pack.short_term)}  long={len(pack.long_term)}",
+            format_log(
+                f"memory=on  short={len(pack.short_term)}  long={len(pack.long_term)}"
             )
         )
 
@@ -396,7 +417,7 @@ def _handle_shell(line: str, interpreter: SovereignInterpreter) -> None:
     print(format_console(output))
 
 
-def _read_user_input(prompt: str = "You: ") -> str:
+def _read_user_input(prompt: str = PROMPT_PREFIX) -> str:
     """Read one line, or a triple-quoted block across lines."""
     message = input(prompt)
     if '"""' not in message:
@@ -429,13 +450,14 @@ def run_repl(*, auto_run: bool | None = None) -> int:
         endpoint=config.llm_base_url,
         sandbox_mode=config.sandbox_mode,
         auto_run=config.auto_run,
+        kill_switch=config.kill_switch,
+        allow_cloud=config.allow_cloud,
     )
 
     while True:
         try:
-            # Handbook prompt aesthetic: plain "You:" (no ANSI paint).
-            # Triple quotes (""") open a multi-line block ended by closing """.
-            user_input = _read_user_input("You: ")
+            # Micro-mark prompt; triple quotes open a multi-line block.
+            user_input = _read_user_input(PROMPT_PREFIX)
         except (EOFError, KeyboardInterrupt):
             print()
             return 0

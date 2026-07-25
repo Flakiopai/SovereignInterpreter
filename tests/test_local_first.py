@@ -80,6 +80,18 @@ def test_no_color(monkeypatch):
     assert use_color() is True
 
 
+def test_debug_print_uses_micro_mark(monkeypatch, capsys):
+    monkeypatch.setenv("NO_COLOR", "1")
+    from sovereigninterpreter.util import debug_print
+
+    debug_print(False, "exec_time=42ms")
+    assert capsys.readouterr().out == ""
+    debug_print(True, "exec_time=42ms")
+    out = capsys.readouterr().out
+    assert out.startswith("[S|I] ")
+    assert "exec_time=42ms" in out
+
+
 def test_public_exports():
     cfg = SovereignConfig(kill_switch=False)
     from sovereigninterpreter.llm import MockLocalLLM

@@ -12,6 +12,29 @@ Familiar chat → code → console ergonomics from an upstream interpreter frame
 
 ---
 
+## What’s New
+
+**v1.0.0 — visual identity (presentation-only).** Neon block SI header, `[S|I]` micro-mark on the prompt / logs / debug (not beside the big mark), color-coded execution labels, and a plain `NO_COLOR` fallback.
+
+```text
+[S|I] SovereignInterpreter v1.0.0
+
+┌────────────────────────────────────────┐
+│ Ready                                  │
+│ model=llama3.2                         │
+│ sandbox=strict                         │
+│ kill_switch=ON                         │
+│ mode=local                             │
+│ endpoint=http://127.0.0.1:11434/v1     │
+│ auto_run=off                           │
+└────────────────────────────────────────┘
+[S|I] >>
+```
+
+Set `NO_COLOR=1` for the text-only header above; with color enabled you get the neon ASCII SI block instead.
+
+---
+
 ## Why SovereignInterpreter Exists
 
 The upstream interpreter framework showed that natural-language chats that emit and run code are a powerful operator model.

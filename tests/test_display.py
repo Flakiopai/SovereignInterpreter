@@ -1,8 +1,13 @@
 from sovereigninterpreter.display import (
+    PROMPT_PREFIX,
+    colors_enabled,
     format_confirm,
     format_console,
     format_error,
+    format_identity_rows,
+    format_log,
     format_message_for_repl,
+    format_run,
     format_skip,
     format_thinking,
 )
@@ -106,6 +111,43 @@ def test_colored_label_respects_no_color(monkeypatch):
     plain = format_console("hello")
     assert plain == "[console] hello"
     assert "\033[" not in plain
+    assert colors_enabled() is False
+
+
+def test_format_run_language_colors(monkeypatch):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    py = format_run("python", 'print("hi")')
+    sh = format_run("shell", "ls")
+    assert "\033[36m" in py  # cyan
+    assert "\033[33m" in sh  # neon yellow
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert format_run("python", 'print("hi")') == '[run] python → print("hi")'
+
+
+def test_format_identity_rows_plain(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    rows = format_identity_rows(
+        model="llama3.2",
+        sandbox_mode="strict",
+        kill_switch=True,
+        allow_cloud=False,
+        endpoint="http://127.0.0.1:11434/v1",
+        auto_run=False,
+    )
+    joined = "\n".join(rows)
+    assert "Ready" in joined
+    assert "model=llama3.2" in joined
+    assert "sandbox=strict" in joined
+    assert "kill_switch=ON" in joined
+    assert "mode=local" in joined
+    assert "auto_run=off" in joined
+
+
+def test_format_log_and_prompt_prefix(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert format_log("sandbox=strict") == "[S|I] sandbox=strict"
+    assert PROMPT_PREFIX == "[S|I] >> "
 
 
 def test_thinking_printed_before_model(tmp_path, monkeypatch, capsys):

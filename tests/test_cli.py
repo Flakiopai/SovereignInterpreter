@@ -21,13 +21,40 @@ def test_banner_shows_ready_and_system_tip(monkeypatch, capsys):
         endpoint="http://127.0.0.1:11434/v1",
         sandbox_mode="strict",
         auto_run=False,
+        kill_switch=True,
+        allow_cloud=False,
     )
     out = capsys.readouterr().out
-    assert "SovereignInterpreter v1.0.0" in out
+    # NO_COLOR: micro-mark fallback identity (no block header).
+    assert "[S|I] SovereignInterpreter v1.0.0" in out
+    assert "██████╗" not in out
     assert "Ready" in out
     assert "sandbox=strict" in out
     assert "auto_run=off" in out
+    assert "kill_switch=ON" in out
+    assert "mode=local" in out
     assert "[system]" in out
+
+
+def test_banner_color_block_has_no_micro_mark(monkeypatch, capsys):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    _banner(
+        version="1.0.0",
+        model="llama3.2",
+        endpoint="http://127.0.0.1:11434/v1",
+        sandbox_mode="strict",
+        auto_run=False,
+        kill_switch=True,
+        allow_cloud=False,
+    )
+    out = capsys.readouterr().out
+    assert "██████╗ ██╗" in out
+    assert "SovereignInterpreter v1.0.0" in out
+    # Micro-mark must not sit beside the block header.
+    assert "[S|I] SovereignInterpreter" not in out
+    assert "██████╗ ██╗  [S|I]" not in out
+    assert "_ _" not in out
 
 
 def test_help_and_status_magics_use_system_labels(tmp_path, monkeypatch, capsys):
@@ -41,7 +68,7 @@ def test_help_and_status_magics_use_system_labels(tmp_path, monkeypatch, capsys)
     out = capsys.readouterr().out
     assert "[system]" in out
     assert "Magics:" in out
-    assert "sandbox=" in out
+    assert "[S|I] sandbox=" in out
     assert "model=" in out
 
 

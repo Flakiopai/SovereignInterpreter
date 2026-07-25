@@ -6,6 +6,9 @@ import os
 from datetime import datetime
 from typing import Any
 
+# Keep in sync with display.GLYPH_MICRO (avoid import cycle).
+_SI_MARK = "[S|I]"
+
 
 def use_color() -> bool:
     """ANSI color is decorative only; respect NO_COLOR / FORCE_COLOR (WCAG-friendly)."""
@@ -23,12 +26,14 @@ def paint(text: str, code: str) -> str:
 
 
 def debug_print(debug: bool, *args: Any) -> None:
+    """Debug line with SI micro-mark, e.g. ``[S|I] exec_time=42ms``."""
     if not debug:
         return
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     message = " ".join(map(str, args))
-    prefix = paint(f"[{timestamp}]", "90")
-    print(f"{prefix} {message}")
+    mark = paint(_SI_MARK, "33")
+    stamp = paint(f"[{timestamp}]", "90")
+    print(f"{mark} {stamp} {message}")
 
 
 def truncate_output(text: str, max_chars: int = 8000) -> str:

@@ -20,6 +20,14 @@ First stable **Sovereign Edition** release. Local-first chat→code→console wi
 - Multi-line `"""` input; one-shot `sovereigninterpreter run "…"`
 - Operator handbook, smoke-test path, CLI offline smoke tests
 
+### Changed
+- CLI visual identity (presentation-only; version remains **1.0.0**):
+  - Neon block SI header (vertical `I` only — never reads as ST)
+  - `[S|I]` micro-mark relocated to prompt, status/info logs, and debug lines
+  - `NO_COLOR` fallback identity: `[S|I] SovereignInterpreter v1.0.0`
+  - Color-coded execution blocks: python cyan, shell neon yellow, console white, errors red
+  - Identity Ready box: model / sandbox / kill_switch / local mode (+ endpoint / auto_run)
+
 ### Fixed
 - Confirm UI dedupe (single `[confirm]` + box + `[y/N]`)
 - Sandbox denials emit `[skip]` only (no misleading `[run]`)
