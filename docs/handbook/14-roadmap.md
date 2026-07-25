@@ -27,7 +27,7 @@ Future improvements should keep the same promises: local by default, ask before 
 ## Explain like I’m 12
 
 ```text
-  Now (0.3.0)
+  Now (1.0.1)
     sandbox + envelopes + labels + intent gates
 
   Later (maybe)

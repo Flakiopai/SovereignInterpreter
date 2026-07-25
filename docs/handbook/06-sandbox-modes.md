@@ -17,7 +17,7 @@ Helpers: `allows_python()`, `allows_shell()`, `effective_roots()`.
 **Deletes:** `allow_delete_default()` is **False** — filesystem delete stays denied unless an operator explicitly constructs the mutator with delete enabled.
 
 ```text
-  Mode matrix (v0.3.0)
+  Mode matrix (v1.0.1)
 
            python   shell    FS roots
   safe       ✗        ✗      ./workspace

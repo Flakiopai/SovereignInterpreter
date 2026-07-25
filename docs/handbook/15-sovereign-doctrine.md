@@ -2,7 +2,7 @@
 
 ## Senior engineer
 
-Doctrine is the **invariant set** enforced by runtime checks in the main repo. The operator-facing table (including the 0.3.0 sandbox row):
+Doctrine is the **invariant set** enforced by runtime checks in the main repo. The operator-facing table (including the 1.0.1 sandbox row):
 
 | Doctrine | Enforcement locus |
 |----------|-------------------|
