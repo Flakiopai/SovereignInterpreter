@@ -76,3 +76,79 @@ dmypy.json
 # Runtime workspace contents (keep folder via .gitkeep)
 workspace/*
 !workspace/.gitkeep
+
+# =============================================================================
+# Synced from ~/.gitignore_global
+# =============================================================================
+# macOS  
+.DS_Store  
+  
+# Windows  
+Thumbs.db  
+  
+# Cursor workspace  
+.cursor/  
+  
+# VS Code junk  
+.vscode/  
+  
+# Logs  
+*.log  
+  
+# Swap files  
+*.swp  
+*.swo  
+  
+# Netlify drag-and-drop zips  
+*.zip  
+
+# Node / JS ecosystem (if you ever use it)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python (if you ever use it)
+__pycache__/
+*.pyc
+
+# JetBrains IDEs (if you ever use them)
+.idea/
+
+# VS Code workspace files
+*.code-workspace
+
+# macOS metadata
+.AppleDouble
+.LSOverride
+
+# Temporary files
+*.tmp
+*.temp
+
+# AI tools (future-proofing)
+.openai/
+.claude/
+.llama/
+
+# Merge conflict backups  
+*.orig  
+  
+# Editor backups  
+*.bak  
+*.backup  
+  
+# Crash dumps  
+*.dmp  
+*.stackdump  
+  
+# Compiled binaries (optional future-proofing)  
+*.o  
+*.out  
+*.exe  
+*.dll  
+*.so  
+*.a  
+  
+# Mac resource forks  
+._*  
